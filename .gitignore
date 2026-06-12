@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+*.db
+.env
+.env.*
+!.env.example
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+report.html
+*.tsbuildinfo

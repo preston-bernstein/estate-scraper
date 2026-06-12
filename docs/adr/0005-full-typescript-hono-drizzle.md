@@ -1,0 +1,3 @@
+# Full TypeScript stack: Hono + Drizzle + React + Vite
+
+The POC used Python (Flask, requests, BeautifulSoup) but nothing in the scraper or vision pipeline requires Python — both are HTTP calls that translate directly to TypeScript with fetch and cheerio. A full TypeScript monorepo (Hono on Node.js for the API, React 19 + Tailwind v4 + Vite for the UI, Drizzle + better-sqlite3 for SQLite) eliminates the language context switch that degrades AI coding tool performance, and means one runtime, one tsconfig, one package.json. Hono is chosen over Fastify or Express for its native SSE helpers and minimal surface area. The Python POC is discarded entirely.

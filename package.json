@@ -1,0 +1,20 @@
+{
+  "name": "estate-scraper",
+  "private": true,
+  "workspaces": [
+    "api",
+    "ui"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w api\" \"npm run dev -w ui\"",
+    "build": "npm run build -w api -w ui",
+    "typecheck": "npm run typecheck -w api -w ui",
+    "start": "npm run start -w api",
+    "scan": "npm run scan -w api",
+    "import": "npm run import -w api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  }
+}

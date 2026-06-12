@@ -1,0 +1,121 @@
+---
+description: Estate Sale Scanner — full project context, stack, domain language, and design decisions
+alwaysApply: true
+---
+
+# Estate Sale Scanner
+
+Scrapes estatesales.net within a geographic radius, runs local Ollama vision analysis on listing images, presents findings through a browsable dashboard with personal interest filtering.
+
+## Stack
+
+- **API**: Hono (Node.js) + TypeScript
+- **DB**: Drizzle ORM + better-sqlite3 (SQLite)
+- **UI**: React 19 + TypeScript + Tailwind v4 + Vite
+- **Scraping**: native fetch + cheerio
+- **Vision**: native fetch → Ollama at `YOUR_DESKTOP_IP:11434`, model `llava:13b`
+- **Auth**: OIDC client against self-hosted Authentik (stub identity during development)
+- **Monorepo**: `api/` + `ui/` workspaces, root `package.json`
+- **Scheduler**: macOS LaunchAgent, fires Friday 1:00am
+
+## Domain Language
+
+Use these terms exactly. Never substitute synonyms.
+
+- **Sale** — a single estate sale listing with date range, address, and images. Not "listing", "event", or "result".
+- **Finding** — one image from a Sale that vision flagged as containing valuable items, with the model's plain-text description. Not "result", "match", or "hit".
+- **Hunt** — a named, saved keyword filter owned by a user (OIDC sub claim), used to narrow Findings to current interests. Not "filter", "search", or "watchlist".
+- **Scan** — a full scheduled run: scrape all Sales in Radius + vision analysis on every image. Accumulates — never overwrites. Not "job", "run", or "crawl".
+- **Radius** — geographic search boundary in miles, centered on Home. Not "area" or "region".
+- **Home** — fixed reference address: YOUR_HOME_ADDRESS, Decatur GA YOUR_HOME_ZIP. Used for distance calculation and Radius center.
+- **Plan** — a user's ordered set of Sales chosen for a given day, drag-reorderable by visit sequence. Not "route", "itinerary", or "shortlist".
+
+## Routes
+
+- `/` — Sale list (upcoming only, Hunt-filtered, sorted start date → distance)
+- `/sales/:id` — Sale detail page
+- `/history` — Past sales (end date passed)
+- `/hunts` — Hunt management + Radius config
+
+## Database Schema
+
+Three tables:
+- `sales` — sale_id, title, url, start_date, end_date, address, city, state, zip, lat, lon, distance_miles, scraped_at
+- `findings` — id, sale_id, image_url, description, scraped_at
+- `hunts` — id, owner_sub (OIDC sub claim), name, keywords (JSON array), created_at
+
+Sales accumulate across Scans. Deduplication by sale_id. A Scan never deletes existing rows.
+
+## API Decisions
+
+- Hunt filtering happens at query time (server-side), not client-side. The vision pass is generic; Hunts are applied when fetching.
+- No manual scan trigger in the API. Scan is CLI-only, invoked by LaunchAgent.
+- SSE endpoint for scan progress: `GET /api/scan/stream`
+- Hunts are scoped to OIDC `sub` claim. During development, use a hardcoded stub sub.
+
+## UI Design
+
+**Visual language:**
+- System-adaptive (respects `prefers-color-scheme`), designed light-first
+- Light: `#F2F2F7` page background, `#FFFFFF` card surfaces
+- Dark: derived from light, not the primary expression
+- Font: system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`) — renders SF Pro on Apple devices
+- Single accent color: `#007AFF` (Apple blue) — used on interactive elements, active states, "Today" badge, links only
+- Generous whitespace, soft shadows (not borders) on cards, 12px corner radius
+
+**Mobile layout (bottom tab bar):**
+- **Plan tab** — ordered draggable Sale cards. Swipe left → remove. Drag handle → reorder.
+- **Browse tab** — Hunt-filtered Sale list. `+ Plan` button on each card. Tap card body → detail page.
+- **Hunts tab** — Hunt management + Radius slider.
+
+**Desktop layout:**
+- Plan: fixed left column (~280px)
+- Browse: main content area
+- Top nav: logo + "Last scanned: [time]" status (warning if scan failed) + user avatar
+
+**Sale list card (collapsed):**
+- Single thumbnail — the Finding with the most specific/longest description
+- Sale title (cleaned, no bid-count prefix)
+- Start date badge: "Today" (blue), "Sat", "Sun", or date string
+- Distance from Home in miles
+- Hunt match counts: "12 furniture · 2 silver"
+- `+ Plan` button — adds to Plan without navigating. Tap card body → detail page.
+
+**Sale detail page:**
+- Sale header: title, address, date range, company name, distance
+- Embedded OpenStreetMap pin (no Google Maps, no API key)
+- Findings grid (Hunt-matched by default)
+- Toggle: "Showing N matched · show all M" — reveals all Findings when toggled
+- Image tap → lightbox with left/right arrow navigation (swipe on mobile)
+- "View listing" link → estatesales.net sale page (new tab)
+
+**Plan interactions:**
+- Opt-in: nothing in Plan by default. User explicitly adds via `+ Plan`.
+- Swipe left to remove on mobile. × on hover on desktop.
+- Drag to reorder visit sequence.
+
+**Empty states (all follow same pattern):**
+- No Hunts: icon + "No hunts yet" + "Create a hunt to see matching sales" + button → /hunts
+- Hunts exist, no matches: icon + "Nothing matched this week" + Hunt names checked + keyword hint
+- Plan empty: icon + "Add sales to build your plan" + pointer to Browse tab
+
+## Key Constraints
+
+- The scraper must extract sale start/end dates and address from the detail page (not just the listing card).
+- Geocoding: haversine distance from Home coordinates. No external geocoding API required for distance — geocode the sale address once at scrape time (use a free geocoding API or nominatim).
+- Vision workers: 6 concurrent, each doing download + inference. Ollama serializes inference; concurrency helps with download pipelining.
+- Vision prompt: "You are scanning an estate sale photo for valuable items. Respond with a short list of the specific valuable objects you actually see. Only name objects physically visible in the image. Do NOT list categories, do NOT say 'none', do NOT use key:value format. If nothing valuable is visible, respond with exactly one word: NOTHING."
+- Scan accumulates — never overwrites or deletes existing sales/findings.
+- No manual scan trigger in the UI. The dashboard is read-only.
+- Auth is OIDC (Authentik). During development, stub the sub claim as `"dev-user"`. Do not build a custom auth system.
+
+## What NOT to Do
+
+- Do not use Python anywhere. Everything is TypeScript.
+- Do not use Google Maps. Use OpenStreetMap / Leaflet.
+- Do not add a "New Scan" button to the UI.
+- Do not overwrite findings.json — there is no findings.json. Storage is SQLite only.
+- Do not add a custom login form. Auth is OIDC or stubbed.
+- Do not use Prisma. Use Drizzle.
+- Do not use Express or Fastify. Use Hono.
+- Do not use Next.js. Use Vite + React.
