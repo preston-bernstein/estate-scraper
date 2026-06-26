@@ -1,7 +1,8 @@
 import {
   OLLAMA_HOST,
   OLLAMA_MODEL,
-  VISION_PROMPT,
+  VISION_SYSTEM_PROMPT,
+  VISION_USER_PROMPT,
   VISION_WORKERS,
 } from "../lib/constants.js";
 import { fetchBuffer } from "../lib/http.js";
@@ -51,15 +52,19 @@ type ImageResult = {
   durationS: number;
 };
 
-function hasFindings(response: string): boolean {
-  if (!response.trim()) {
-    return false;
-  }
+// Determines whether a response string contains real findings.
+// Handles both structured (post-parse) and legacy plain-text responses.
+export function hasFindings(response: string): boolean {
+  const trimmed = response.trim();
+  if (!trimmed) return false;
 
-  const normalized = response.trim().toUpperCase();
-  if (normalized === "NOTHING") {
-    return false;
-  }
+  const normalized = trimmed.toUpperCase();
+  if (normalized === "NOTHING") return false;
+
+  // Reject verbose paragraph responses — valid output is a short list.
+  // 1000 chars allows ~10 items with full brand/era/condition attributes (~80 chars each).
+  if (trimmed.length > 1000) return false;
+  if (/^(The image|I can|This image|In this image|The photo)/i.test(trimmed)) return false;
 
   const lines = normalized.split(/\r?\n/).filter((line) => line.trim());
   const junk = lines.filter(
@@ -73,13 +78,15 @@ function hasFindings(response: string): boolean {
 }
 
 async function runVision(imageBase64: string): Promise<string> {
-  const response = await fetch(`${OLLAMA_HOST}/api/generate`, {
+  const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: OLLAMA_MODEL,
-      prompt: VISION_PROMPT,
-      images: [imageBase64],
+      messages: [
+        { role: "system", content: VISION_SYSTEM_PROMPT },
+        { role: "user", content: VISION_USER_PROMPT, images: [imageBase64] },
+      ],
       stream: false,
       options: { temperature: 0.1 },
     }),
@@ -90,8 +97,13 @@ async function runVision(imageBase64: string): Promise<string> {
     throw new Error(`Ollama HTTP ${response.status}`);
   }
 
-  const payload = (await response.json()) as { response?: string };
-  return payload.response?.trim() ?? "";
+  const payload = (await response.json()) as { message?: { content?: string } };
+  // Strip spurious trailing "NOTHING" lines qwen occasionally appends to real responses.
+  return (payload.message?.content ?? "")
+    .split("\n")
+    .filter((line) => line.trim().toUpperCase() !== "NOTHING")
+    .join("\n")
+    .trim();
 }
 
 async function processImage(url: string, saleId: string): Promise<ImageResult> {
@@ -169,6 +181,8 @@ export async function checkModelAvailable(
   }
 }
 
+const MAX_PER_DESCRIPTION = 5;
+
 export async function* processSalesStream(
   sales: ScrapedSale[],
   options: {
@@ -208,18 +222,26 @@ export async function* processSalesStream(
     );
 
     let found = 0;
+    const descriptionCounts = new Map<string, number>();
+
     for (const [index, result] of results.entries()) {
       if (result.error) {
         errors += 1;
       } else if (hasFindings(result.response)) {
-        found += 1;
-        yield {
-          type: "finding",
-          saleId: sale.saleId,
-          imageUrl: result.url,
-          description: result.response,
-          durationS: result.durationS,
-        };
+        const key = result.response.trim().toLowerCase();
+        const count = (descriptionCounts.get(key) ?? 0) + 1;
+        descriptionCounts.set(key, count);
+
+        if (count <= MAX_PER_DESCRIPTION) {
+          found += 1;
+          yield {
+            type: "finding",
+            saleId: sale.saleId,
+            imageUrl: result.url,
+            description: result.response,
+            durationS: result.durationS,
+          };
+        }
       }
 
       yield {

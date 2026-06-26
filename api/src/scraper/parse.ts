@@ -1,3 +1,5 @@
+import { SKIP_IMAGE_PATTERNS } from "../lib/constants.js";
+
 export type ListingRef = {
   saleId: string;
   title: string;
@@ -77,6 +79,11 @@ export function parseSaleDetail(html: string, url: string): SaleDetail | null {
   const zip = firstMatch(html, /"postalCode":"([^"]+)"/);
 
   if (!startDate || !endDate || !address || !city || !state || !zip) {
+    const missing = { startDate, endDate, address, city, state, zip };
+    const absent = Object.entries(missing)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    console.error(`  [parse] missing fields: ${absent.join(", ")}`);
     return null;
   }
 
@@ -88,11 +95,9 @@ export function parseSaleDetail(html: string, url: string): SaleDetail | null {
 
   const imageUrls: string[] = [];
   const seenImages = new Set<string>();
-  const skipPatterns = ["logo", "icon", "orglogo", "avatar", "pixel", "blank", "badge"];
-
   for (const imageUrl of rawUrls) {
     const lower = imageUrl.toLowerCase();
-    if (skipPatterns.some((pattern) => lower.includes(pattern))) {
+    if (SKIP_IMAGE_PATTERNS.some((pattern) => lower.includes(pattern))) {
       continue;
     }
     if (seenImages.has(imageUrl)) {

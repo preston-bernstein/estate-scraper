@@ -11,7 +11,10 @@
     "typecheck": "npm run typecheck -w api -w ui",
     "start": "npm run start -w api",
     "scan": "npm run scan -w api",
-    "import": "npm run import -w api"
+    "import": "npm run import -w api",
+    "test": "npm run test -w api",
+    "test:watch": "npm run test:watch -w api",
+    "eval": "tsx eval/index.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

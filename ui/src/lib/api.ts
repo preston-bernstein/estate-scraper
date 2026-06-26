@@ -1,5 +1,7 @@
 import type {
+  DiscoverResponse,
   Finding,
+  FindingWithSale,
   Hunt,
   SaleSummary,
   SettingsResponse,
@@ -70,4 +72,49 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ saleIds }),
     }),
+  searchFindings: (keywords: string[]) =>
+    request<{ findings: FindingWithSale[] }>(
+      `/api/findings?q=${encodeURIComponent(keywords.join(","))}`,
+    ),
+  getDiscover: () => request<DiscoverResponse>("/api/discover"),
+  streamChat: async (
+    message: string,
+    history: { role: "user" | "assistant"; content: string }[],
+    onToken: (token: string) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+  ) => {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history }),
+    });
+    if (!res.ok || !res.body) {
+      onError(`HTTP ${res.status}`);
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      for (const line of text.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const payload = JSON.parse(line.slice(6)) as {
+            token?: string;
+            done?: boolean;
+            error?: string;
+          };
+          if (payload.error) { onError(payload.error); return; }
+          if (payload.token) onToken(payload.token);
+          if (payload.done) { onDone(); return; }
+        } catch {
+          // partial line
+        }
+      }
+    }
+    onDone();
+  },
 };

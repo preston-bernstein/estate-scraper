@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { findings, hunts, planItems, sales, userSettings } from "../db/schema.js";
 import {
@@ -20,6 +20,18 @@ export async function getUserHunts(ownerSub: string) {
 
 export async function getFindingsForSale(saleId: string) {
   return db.select().from(findings).where(eq(findings.saleId, saleId));
+}
+
+async function getFindingsForSales(saleIds: string[]): Promise<Map<string, FindingRow[]>> {
+  if (saleIds.length === 0) return new Map();
+  const rows = await db.select().from(findings).where(inArray(findings.saleId, saleIds));
+  const map = new Map<string, FindingRow[]>();
+  for (const row of rows) {
+    const list = map.get(row.saleId) ?? [];
+    list.push(row);
+    map.set(row.saleId, list);
+  }
+  return map;
 }
 
 function pickThumbnail(findingRows: FindingRow[]) {
@@ -88,17 +100,15 @@ export async function listUpcomingSales(ownerSub: string) {
     .where(gte(sales.endDate, today))
     .orderBy(sales.startDate, sales.distanceMiles);
 
+  const saleIds = upcomingSales.map((s) => s.saleId);
+  const findingsMap = await getFindingsForSales(saleIds);
   const summaries = [];
 
   for (const sale of upcomingSales) {
-    const saleFindings = await getFindingsForSale(sale.saleId);
-    if (!saleMatchesHunts(
-      saleFindings.map((finding) => finding.description),
-      userHunts,
-    )) {
+    const saleFindings = findingsMap.get(sale.saleId) ?? [];
+    if (!saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
       continue;
     }
-
     summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
   }
 
@@ -118,17 +128,15 @@ export async function listPastSales(ownerSub: string) {
     .where(lt(sales.endDate, today))
     .orderBy(desc(sales.endDate), sales.distanceMiles);
 
+  const saleIds = pastSales.map((s) => s.saleId);
+  const findingsMap = await getFindingsForSales(saleIds);
   const summaries = [];
 
   for (const sale of pastSales) {
-    const saleFindings = await getFindingsForSale(sale.saleId);
-    if (!saleMatchesHunts(
-      saleFindings.map((finding) => finding.description),
-      userHunts,
-    )) {
+    const saleFindings = findingsMap.get(sale.saleId) ?? [];
+    if (!saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
       continue;
     }
-
     summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
   }
 
@@ -165,6 +173,46 @@ export async function getSaleDetail(ownerSub: string, saleId: string) {
     matchedFindingCount: matchedFindings.length,
     totalFindingCount: saleFindings.length,
   };
+}
+
+export type FindingWithSale = {
+  id: number;
+  saleId: string;
+  imageUrl: string;
+  description: string;
+  scrapedAt: string;
+  saleTitle: string;
+  saleStartDate: string;
+  saleEndDate: string;
+  distanceMiles: number;
+};
+
+export async function searchFindings(keywords: string[]): Promise<FindingWithSale[]> {
+  if (keywords.length === 0) return [];
+
+  const conditions = keywords.map(
+    (k) => sql`lower(${findings.description}) like ${"%" + k.toLowerCase() + "%"}`,
+  );
+  const whereClause = conditions.reduce((acc, cond) => or(acc, cond)!);
+
+  const rows = await db
+    .select({
+      id: findings.id,
+      saleId: findings.saleId,
+      imageUrl: findings.imageUrl,
+      description: findings.description,
+      scrapedAt: findings.scrapedAt,
+      saleTitle: sales.title,
+      saleStartDate: sales.startDate,
+      saleEndDate: sales.endDate,
+      distanceMiles: sales.distanceMiles,
+    })
+    .from(findings)
+    .innerJoin(sales, eq(findings.saleId, sales.saleId))
+    .where(whereClause)
+    .orderBy(desc(sales.startDate));
+
+  return rows;
 }
 
 export async function getLastScannedAt(): Promise<string | null> {
@@ -208,20 +256,20 @@ export async function listPlanItems(ownerSub: string) {
     .where(eq(planItems.ownerSub, ownerSub))
     .orderBy(planItems.sortOrder);
 
+  if (items.length === 0) return [];
+
   const userHunts = await getUserHunts(ownerSub);
+  const saleIds = items.map((item) => item.saleId);
+
+  const saleRows = await db.select().from(sales).where(inArray(sales.saleId, saleIds));
+  const saleMap = new Map(saleRows.map((s) => [s.saleId, s]));
+  const findingsMap = await getFindingsForSales(saleIds);
+
   const plannedSales = [];
-
   for (const item of items) {
-    const [sale] = await db
-      .select()
-      .from(sales)
-      .where(eq(sales.saleId, item.saleId));
-
-    if (!sale) {
-      continue;
-    }
-
-    const saleFindings = await getFindingsForSale(sale.saleId);
+    const sale = saleMap.get(item.saleId);
+    if (!sale) continue;
+    const saleFindings = findingsMap.get(item.saleId) ?? [];
     plannedSales.push({
       sortOrder: item.sortOrder,
       ...(await buildSaleSummary(sale, userHunts, saleFindings)),
@@ -268,13 +316,12 @@ export async function removePlanItem(ownerSub: string, saleId: string) {
 }
 
 export async function reorderPlanItems(ownerSub: string, saleIds: string[]) {
-  await db.transaction((tx) => {
+  db.transaction((tx) => {
     for (const [index, saleId] of saleIds.entries()) {
       tx.update(planItems)
         .set({ sortOrder: index })
-        .where(
-          and(eq(planItems.ownerSub, ownerSub), eq(planItems.saleId, saleId)),
-        );
+        .where(and(eq(planItems.ownerSub, ownerSub), eq(planItems.saleId, saleId)))
+        .run();
     }
   });
 }

@@ -8,7 +8,9 @@ import { db, runMigrations } from "./db/index.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { huntRoutes, settingsRoutes } from "./routes/hunts.js";
 import { planRoutes } from "./routes/plan.js";
-import { salesRoutes, scanRoutes, statusRoutes } from "./routes/sales.js";
+import { findingsRoutes, salesRoutes, scanRoutes, statusRoutes } from "./routes/sales.js";
+import { discoverRoutes } from "./routes/discover.js";
+import { chatRoutes } from "./routes/chat.js";
 import { DEV_USER_SUB, type AppEnv } from "./types/env.js";
 
 runMigrations();
@@ -26,6 +28,9 @@ app.route("/api/settings", settingsRoutes);
 app.route("/api/plan", planRoutes);
 app.route("/api/status", statusRoutes);
 app.route("/api/scan", scanRoutes);
+app.route("/api/findings", findingsRoutes);
+app.route("/api/discover", discoverRoutes);
+app.route("/api/chat", chatRoutes);
 
 const apiRoot = dirname(fileURLToPath(import.meta.url));
 const uiDist = resolve(apiRoot, "../../ui/dist");

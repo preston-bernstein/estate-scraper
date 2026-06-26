@@ -7,6 +7,7 @@ import {
   getSaleDetail,
   listPastSales,
   listUpcomingSales,
+  searchFindings,
 } from "../services/sales.js";
 
 export const salesRoutes = new Hono<AppEnv>();
@@ -32,6 +33,18 @@ salesRoutes.get("/:id", async (c) => {
   }
 
   return c.json(detail);
+});
+
+export const findingsRoutes = new Hono<AppEnv>();
+
+findingsRoutes.get("/", async (c) => {
+  const q = c.req.query("q") ?? "";
+  const keywords = q
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  const results = await searchFindings(keywords);
+  return c.json({ findings: results });
 });
 
 export const statusRoutes = new Hono();
@@ -84,7 +97,7 @@ scanRoutes.get("/stream", async (c) => {
         });
       }
 
-      if (!scanState.running && scanState.phase === "done") {
+      if (!scanState.running && (scanState.phase === "done" || scanState.phase === "idle")) {
         break;
       }
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runMigrations } from "../db/index.js";
-import { distanceFromHome, geocodeAddress, nominatimDelay } from "../lib/geo.js";
+import { distanceFromHome, geocodeAddress } from "../lib/geo.js";
 import { fetchText } from "../lib/http.js";
 import { parseSaleDetail } from "../scraper/parse.js";
 import {
@@ -39,7 +39,6 @@ async function ensureSaleRecord(
     return null;
   }
 
-  await nominatimDelay();
   const geocoded = await geocodeAddress({
     address: detail.address,
     city: detail.city,
@@ -76,15 +75,11 @@ async function seedDefaultHunts() {
     { name: "art", keywords: ["painting", "lithograph", "art", "print"] },
   ];
 
-  for (const hunt of defaults) {
-    const existing = await db
-      .select()
-      .from(hunts)
-      .where(eq(hunts.ownerSub, DEV_USER_SUB));
+  const existing = await db.select().from(hunts).where(eq(hunts.ownerSub, DEV_USER_SUB));
+  const existingNames = new Set(existing.map((row) => row.name));
 
-    if (existing.some((row) => row.name === hunt.name)) {
-      continue;
-    }
+  for (const hunt of defaults) {
+    if (existingNames.has(hunt.name)) continue;
 
     await db.insert(hunts).values({
       ownerSub: DEV_USER_SUB,

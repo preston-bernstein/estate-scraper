@@ -1,0 +1,114 @@
+[
+  {
+    "url": "https://picturescdn.estatesales.net/4941951/1-1/579798d3-3220-43ea-a4a4-0ceb2967eba4.jpg",
+    "category": "seating",
+    "expectedKeywords": ["couch", "sofa", "sectional", "loveseat", "chair"],
+    "expectNothing": false,
+    "notes": "Living room scene — couch visible alongside lamp, coffee table, rug"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/64c6cf22-d8d3-481a-92ef-401e565402e1.jpg",
+    "category": "seating",
+    "expectedKeywords": ["couch", "sofa", "sectional", "loveseat", "chair"],
+    "expectNothing": false,
+    "notes": "Living room with couch, chairs, coffee table, bookshelves"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-2/81d1e221-d128-4553-ac4b-743c5ea6cfcf.jpg",
+    "category": "bed",
+    "expectedKeywords": ["bed", "headboard", "mattress", "bedframe", "king", "queen"],
+    "expectNothing": false,
+    "notes": "Bedroom with bed"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4890765/1-1/9203b756-d892-44fa-8d88-60944e2e4cbe.jpg",
+    "category": "collectible",
+    "expectedKeywords": ["clock", "grandfather"],
+    "expectNothing": false,
+    "notes": "Grandfather clock — high-value antique"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4890765/1-1/aa5fb692-faf1-46d8-af78-6c5e50dfa0d0.jpg",
+    "category": "collectible",
+    "expectedKeywords": ["clock", "grandfather"],
+    "expectNothing": false,
+    "notes": "Same grandfather clock, different angle"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4945662/1-1/2b2e3a5d-4dc3-441b-be34-9602fefe49a5.jpg",
+    "category": "collectible",
+    "expectedKeywords": ["stickley", "armchair", "chair", "craftsman", "mission"],
+    "expectNothing": false,
+    "notes": "Stickley armchair — premium brand, Arts & Crafts / Mission style"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/2101f04b-38b3-4303-b5cc-be5a7602f9f9.jpg",
+    "category": "collectible",
+    "expectedKeywords": ["lamp", "tiffany", "light", "chandelier", "fixture"],
+    "expectNothing": false,
+    "notes": "Lamp — potentially valuable, need specificity to assess"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4961025/1-1/2488486a-5f60-4d32-9120-caf57a29ccfc.jpg",
+    "category": "case_goods",
+    "expectedKeywords": ["dresser", "chest", "bureau", "cabinet", "credenza", "armoire", "wardrobe"],
+    "expectNothing": false,
+    "notes": "Dresser"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/899931ce-a299-4230-8ad1-501975253fa2.jpg",
+    "category": "case_goods",
+    "expectedKeywords": ["dresser", "chest", "bureau", "cabinet", "credenza", "armoire", "wardrobe"],
+    "expectNothing": false,
+    "notes": "Dresser"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/3fe4d7d2-cf7a-49e3-a1f7-f31f6bf003b2.jpg",
+    "category": "case_goods",
+    "expectedKeywords": ["dresser", "chest", "bureau", "cabinet", "credenza", "armoire", "wardrobe"],
+    "expectNothing": false,
+    "notes": "Dresser (third angle, same sale)"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/4f558434-5a95-44a8-b2cb-8a98fed6727d.jpg",
+    "category": "electronics",
+    "expectedKeywords": ["sega", "genesis", "console", "game"],
+    "expectNothing": false,
+    "notes": "Sega Genesis console"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/98550405-df16-4a6e-9b37-36294ff644a6.jpg",
+    "category": "electronics",
+    "expectedKeywords": ["atari", "game", "cartridge"],
+    "expectNothing": false,
+    "notes": "Atari 2600 cartridge — ET The Extra-Terrestrial (infamous title)"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4970340/1-1/779f6995-ab95-496b-85e7-93d3a1a0bbd8.jpg",
+    "category": "electronics",
+    "expectedKeywords": ["pac-man", "pacman", "pac man", "coleco", "handheld"],
+    "expectNothing": false,
+    "notes": "Coleco Pac-Man handheld game (not an arcade cabinet)"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4970340/1-1/71920fd5-29c1-4c66-8888-dea2282d35ed.jpg",
+    "category": "electronics",
+    "expectedKeywords": ["radio", "wooden", "vintage", "old"],
+    "expectNothing": false,
+    "notes": "Vintage wooden console radio"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4926312/1-1/702de966-9706-488c-ad26-ce0bfa7a3c32.jpg",
+    "category": "kitsch",
+    "expectedKeywords": ["rooster", "ceramic", "figurine", "chicken"],
+    "expectNothing": false,
+    "notes": "Ceramic rooster figurine — kitsch collectible"
+  },
+  {
+    "url": "https://picturescdn.estatesales.net/4970340/1-1/9b221ab8-57b5-4e8f-b27c-411f83a5793d.jpg",
+    "category": "electronics",
+    "expectedKeywords": ["nintendo", "pokemon", "game", "cartridge"],
+    "expectNothing": false,
+    "notes": "Nintendo Pokemon game cartridge"
+  }
+]

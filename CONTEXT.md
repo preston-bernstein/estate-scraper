@@ -31,3 +31,7 @@ _Avoid_: location, origin, base
 **Plan**:
 The user's ordered set of Sales they have decided to attend on a given day, draggable to reflect intended visit sequence. A Sale in the Plan has been explicitly chosen from Hunt results; a dropped Sale is excluded but not permanently hidden.
 _Avoid_: route, itinerary, shortlist, queue
+
+**Standout**:
+A Finding whose `scoreFinding()` score is ≥ 4, eligible for display in the horizontal featured-item scroll on the Discover page. Standouts surface the single best individual items across all Sales, not the best Sales overall.
+_Avoid_: featured, highlight, top pick, hero

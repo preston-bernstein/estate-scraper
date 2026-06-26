@@ -1,9 +1,5 @@
 import { METRO_LISTING_URL } from "../lib/constants.js";
-import {
-  distanceFromHome,
-  geocodeAddress,
-  nominatimDelay,
-} from "../lib/geo.js";
+import { distanceFromHome, geocodeAddress } from "../lib/geo.js";
 import { fetchText, politeDelay } from "../lib/http.js";
 import { parseListingLinks, parseSaleDetail, type SaleDetail } from "./parse.js";
 
@@ -53,7 +49,6 @@ export async function scrapeWithinRadius(
       continue;
     }
 
-    await nominatimDelay();
     const geocoded = await geocodeAddress({
       address: detail.address,
       city: detail.city,

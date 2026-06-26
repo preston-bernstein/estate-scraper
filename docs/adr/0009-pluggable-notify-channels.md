@@ -1,0 +1,3 @@
+# 0009 — Pluggable notification channels: schema now, delivery later
+
+After each Scan, the system should be able to dispatch a digest of top Findings to the user via email or SMS. Rather than hard-code a single channel, a `notifications` table records one row per configured channel (`email` or `sms`) per user, with an `active` flag. The scan pipeline dispatches to any active channels by iterating this table and delegating to a registered notifier. This allows email (SMTP/Resend) and SMS (Twilio) to be wired up independently without schema migrations on a live database. The `notifications` table is added now; delivery notifiers are deferred until Authentik auth is stable, since a multi-user notify system is not meaningful without reliable identity.

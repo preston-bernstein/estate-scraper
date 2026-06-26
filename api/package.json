@@ -10,7 +10,9 @@
     "scan": "tsx src/scan/index.ts",
     "import": "tsx src/import/index.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",
@@ -23,6 +25,7 @@
     "@types/node": "^22.15.21",
     "drizzle-kit": "^0.31.1",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
   }
 }

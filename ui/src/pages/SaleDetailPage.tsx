@@ -62,6 +62,11 @@ export function SaleDetailPage() {
     ? findings
     : findings.filter((finding) => finding.matched);
 
+  function toggleShowAll() {
+    setLightboxIndex(null);
+    setShowAll((current) => !current);
+  }
+
   return (
     <div className="space-y-6">
       <Link to="/" className="text-sm text-[#007AFF]">
@@ -100,7 +105,7 @@ export function SaleDetailPage() {
           <h2 className="font-medium">Findings</h2>
           <button
             type="button"
-            onClick={() => setShowAll((current) => !current)}
+            onClick={toggleShowAll}
             className="text-sm text-[#007AFF]"
           >
             {showAll

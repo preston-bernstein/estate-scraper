@@ -4,7 +4,7 @@ import { checkModelAvailable, processSalesStream } from "../vision/index.js";
 import {
   getProcessedImageUrls,
   getScanRadiusMiles,
-  insertFinding,
+  insertFindingsBatch,
   upsertSale,
 } from "./persist.js";
 import { ScanStateWriter } from "./state.js";
@@ -95,31 +95,34 @@ async function main() {
     let totalFindings = 0;
     let totalImages = 0;
 
+    let currentSaleId: string | null = null;
+    const saleBuffer: Array<{ imageUrl: string; description: string }> = [];
+
     for await (const event of processSalesStream(scrapedSales, {
       maxImages: args.maxImages,
       skipUrls,
     })) {
       writer.pushEvent(event);
 
-      if (event.type === "finding") {
-        totalFindings += 1;
-        await insertFinding(
-          event.saleId,
-          event.imageUrl,
-          event.description,
-          scrapedAt,
-        );
-        console.log(`  FOUND: ${event.description.slice(0, 80)}`);
-      } else if (event.type === "sale_start") {
+      if (event.type === "sale_start") {
+        currentSaleId = scrapedSales[event.saleIdx].saleId;
+        saleBuffer.length = 0;
         console.log(
           `\n[${event.saleIdx + 1}/${event.totalSales}] ${event.title.slice(0, 60)}`,
         );
         console.log(`  ${event.total} images…`);
+      } else if (event.type === "finding") {
+        totalFindings += 1;
+        saleBuffer.push({ imageUrl: event.imageUrl, description: event.description });
+        console.log(`  FOUND: ${event.description.slice(0, 80)}`);
       } else if (event.type === "sale_done") {
         totalImages += event.imagesProcessed;
         console.log(
           `  Done: ${event.imagesWithFindings} findings / ${event.imagesProcessed} images`,
         );
+        if (currentSaleId !== null) {
+          await insertFindingsBatch(currentSaleId, saleBuffer, scrapedAt);
+        }
       }
     }
 

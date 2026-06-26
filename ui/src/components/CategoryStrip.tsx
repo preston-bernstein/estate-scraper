@@ -1,0 +1,42 @@
+import { cn } from "../lib/utils";
+
+export type Category = "all" | "electronics" | "kitsch" | "collectible" | "furniture";
+
+const LABELS: Record<Category, string> = {
+  all: "All",
+  electronics: "Electronics",
+  kitsch: "Kitsch & Camp",
+  collectible: "Collectibles",
+  furniture: "Furniture",
+};
+
+type Props = {
+  active: Category;
+  counts: Record<Category, number>;
+  onChange: (c: Category) => void;
+};
+
+export function CategoryStrip({ active, counts, onChange }: Props) {
+  const cats = Object.keys(LABELS) as Category[];
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+      {cats.map((cat) => (
+        <button
+          key={cat}
+          onClick={() => onChange(cat)}
+          className={cn(
+            "flex-none px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+            active === cat
+              ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+              : "border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+          )}
+        >
+          {LABELS[cat]}
+          {cat !== "all" && counts[cat] > 0 && (
+            <span className="ml-1.5 text-xs opacity-60">{counts[cat]}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}

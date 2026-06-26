@@ -1,48 +1,45 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { PlanPanel } from "./PlanPanel";
+import { use, Suspense } from "react";
+import { ChatPanel } from "./ChatPanel";
 import { api } from "../lib/api";
+import { cached } from "../lib/cache";
 import { formatLastScanned } from "../lib/format";
 
 const tabs = [
-  { to: "/plan", label: "Plan" },
-  { to: "/", label: "Browse" },
-  { to: "/hunts", label: "Hunts" },
+  { to: "/", label: "Discover", end: true },
+  { to: "/plan", label: "Plan", end: false },
+  { to: "/hunts", label: "Hunts", end: false },
+  { to: "/history", label: "History", end: false },
 ];
 
-export function Layout() {
-  const [lastScannedAt, setLastScannedAt] = useState<string | null>(null);
-  const [scanFailed, setScanFailed] = useState(false);
-  const [userInitials, setUserInitials] = useState("?");
-
-  useEffect(() => {
-    api
-      .getStatus()
-      .then((status) => {
-        setLastScannedAt(status.lastScannedAt);
-        setScanFailed(status.scanFailed);
-      })
-      .catch(() => setScanFailed(true));
-
-    api
-      .getMe()
-      .then((me) => setUserInitials(me.sub.slice(0, 2).toUpperCase()))
-      .catch(() => setUserInitials("?"));
-  }, []);
-
+function ScanStatus() {
+  const status = use(cached("status", api.getStatus));
   return (
-    <div className="min-h-screen bg-[#F2F2F7] text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <header className="sticky top-0 z-10 border-b border-black/5 bg-[#F2F2F7]/90 backdrop-blur dark:border-white/10 dark:bg-gray-950/90">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+    <p className={`text-xs ${status.scanFailed ? "text-amber-600" : "text-zinc-500"}`}>
+      {status.scanRunning ? "Scanning…" : `Last scanned: ${formatLastScanned(status.lastScannedAt)}`}
+    </p>
+  );
+}
+
+function UserAvatar() {
+  const me = use(cached("me", api.getMe));
+  return (
+    <div className="hidden h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-600 md:flex dark:bg-zinc-800 dark:text-zinc-300">
+      {me.sub.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
+export function Layout() {
+  return (
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <header className="sticky top-0 z-20 border-b border-black/5 bg-zinc-50/90 backdrop-blur dark:border-white/10 dark:bg-zinc-950/90">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div>
-            <p className="text-lg font-semibold">Estate Sale Scanner</p>
-            <p
-              className={`text-xs ${
-                scanFailed ? "text-amber-600" : "text-gray-500"
-              }`}
-            >
-              Last scanned: {formatLastScanned(lastScannedAt)}
-            </p>
+            <p className="text-base font-semibold tracking-tight">Estate Sales</p>
+            <Suspense fallback={<p className="text-xs text-zinc-400">Loading…</p>}>
+              <ScanStatus />
+            </Suspense>
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
@@ -50,63 +47,41 @@ export function Layout() {
               <NavLink
                 key={tab.to}
                 to={tab.to}
-                end={tab.to === "/"}
+                end={tab.end}
                 className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-[#007AFF]/10 text-[#007AFF]"
-                      : "text-gray-600 hover:bg-white/60 dark:text-gray-300"
+                      ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+                      : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                   }`
                 }
               >
                 {tab.label}
               </NavLink>
             ))}
-            <NavLink
-              to="/history"
-              className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  isActive
-                    ? "bg-[#007AFF]/10 text-[#007AFF]"
-                    : "text-gray-600 hover:bg-white/60 dark:text-gray-300"
-                }`
-              }
-            >
-              History
-            </NavLink>
           </nav>
 
-          <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600 md:flex dark:bg-gray-800 dark:text-gray-300">
-            {userInitials}
-          </div>
+          <Suspense fallback={<div className="h-8 w-8 rounded-full bg-zinc-200 dark:bg-zinc-800" />}>
+            <UserAvatar />
+          </Suspense>
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-6xl gap-6 px-4 py-4 pb-24 md:pb-6">
-        <aside className="hidden w-[280px] shrink-0 md:block">
-          <div className="sticky top-20">
-            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200">
-              Plan
-            </p>
-            <PlanPanel compact />
-          </div>
-        </aside>
+      <main className="mx-auto max-w-3xl pb-24 md:pb-6">
+        <Outlet />
+      </main>
 
-        <main className="min-w-0 flex-1">
-          <Outlet />
-        </main>
-      </div>
-
-      <nav className="fixed inset-x-0 bottom-0 border-t border-black/5 bg-white/95 backdrop-blur md:hidden dark:border-white/10 dark:bg-gray-950/95">
+      {/* Mobile bottom nav */}
+      <nav className="fixed inset-x-0 bottom-0 border-t border-black/5 bg-white/95 backdrop-blur md:hidden dark:border-white/10 dark:bg-zinc-950/95 z-20">
         <div className="mx-auto flex max-w-lg">
           {tabs.map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
-              end={tab.to === "/"}
+              end={tab.end}
               className={({ isActive }) =>
-                `flex-1 py-3 text-center text-xs font-medium ${
-                  isActive ? "text-[#007AFF]" : "text-gray-500"
+                `flex-1 py-3 text-center text-xs font-medium transition-colors ${
+                  isActive ? "text-zinc-900 dark:text-zinc-50" : "text-zinc-400"
                 }`
               }
             >
@@ -115,6 +90,8 @@ export function Layout() {
           ))}
         </div>
       </nav>
+
+      <ChatPanel />
     </div>
   );
 }

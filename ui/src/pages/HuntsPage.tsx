@@ -55,8 +55,11 @@ export function HuntsPage() {
     setHunts((current) => current.filter((hunt) => hunt.id !== id));
   }
 
-  async function handleRadiusChange(value: number) {
+  function handleRadiusChange(value: number) {
     setRadiusMiles(value);
+  }
+
+  async function handleRadiusCommit(value: number) {
     await api.updateSettings(value);
   }
 
@@ -87,8 +90,9 @@ export function HuntsPage() {
           max={60}
           step={5}
           value={radiusMiles}
-          onChange={(event) =>
-            void handleRadiusChange(Number(event.target.value))
+          onChange={(event) => handleRadiusChange(Number(event.target.value))}
+          onPointerUp={(event) =>
+            void handleRadiusCommit(Number((event.target as HTMLInputElement).value))
           }
           className="mt-3 w-full accent-[#007AFF]"
         />

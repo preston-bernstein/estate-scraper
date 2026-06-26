@@ -1,5 +1,8 @@
 import { FETCH_HEADERS } from "./constants.js";
-import { sleep } from "./geo.js";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function fetchText(url: string): Promise<string | null> {
   try {

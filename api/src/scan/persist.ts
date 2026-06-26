@@ -1,7 +1,9 @@
-import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { findings, sales } from "../db/schema.js";
+import { findings, sales, userSettings } from "../db/schema.js";
+import { DEFAULT_RADIUS_MILES } from "../lib/constants.js";
 import type { ScrapedSale } from "../scraper/index.js";
+import { DEV_USER_SUB } from "../types/env.js";
+import { eq } from "drizzle-orm";
 
 export async function getProcessedImageUrls(): Promise<Set<string>> {
   const rows = await db
@@ -12,15 +14,6 @@ export async function getProcessedImageUrls(): Promise<Set<string>> {
 }
 
 export async function upsertSale(sale: ScrapedSale, scrapedAt: string) {
-  const existing = await db
-    .select({ saleId: sales.saleId })
-    .from(sales)
-    .where(eq(sales.saleId, sale.saleId));
-
-  if (existing.length > 0) {
-    return;
-  }
-
   await db.insert(sales).values({
     saleId: sale.saleId,
     title: sale.title,
@@ -35,7 +28,7 @@ export async function upsertSale(sale: ScrapedSale, scrapedAt: string) {
     lon: sale.lon,
     distanceMiles: sale.distanceMiles,
     scrapedAt,
-  });
+  }).onConflictDoNothing();
 }
 
 export async function insertFinding(
@@ -43,26 +36,33 @@ export async function insertFinding(
   imageUrl: string,
   description: string,
   scrapedAt: string,
-) {
-  const existing = await db
-    .select({ id: findings.id })
-    .from(findings)
-    .where(eq(findings.imageUrl, imageUrl));
+): Promise<void> {
+  await db
+    .insert(findings)
+    .values({ saleId, imageUrl, description, scrapedAt })
+    .onConflictDoNothing();
+}
 
-  if (existing.length > 0) {
-    return;
-  }
-
-  await db.insert(findings).values({
-    saleId,
-    imageUrl,
-    description,
-    scrapedAt,
+export async function insertFindingsBatch(
+  saleId: string,
+  batch: Array<{ imageUrl: string; description: string }>,
+  scrapedAt: string,
+): Promise<void> {
+  if (batch.length === 0) return;
+  await db.transaction(async (tx) => {
+    for (const f of batch) {
+      await tx
+        .insert(findings)
+        .values({ saleId, imageUrl: f.imageUrl, description: f.description, scrapedAt })
+        .onConflictDoNothing();
+    }
   });
 }
 
 export async function getScanRadiusMiles(): Promise<number> {
-  const { userSettings } = await import("../db/schema.js");
-  const [settings] = await db.select().from(userSettings).limit(1);
-  return settings?.radiusMiles ?? 30;
+  const [settings] = await db
+    .select()
+    .from(userSettings)
+    .where(eq(userSettings.ownerSub, DEV_USER_SUB));
+  return settings?.radiusMiles ?? DEFAULT_RADIUS_MILES;
 }
