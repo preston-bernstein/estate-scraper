@@ -1,4 +1,4 @@
-import { gte, inArray } from "drizzle-orm";
+import { and, gte, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { findings, sales } from "../db/schema.js";
 
@@ -158,6 +158,104 @@ export async function getDiscoverData(): Promise<{
   standouts.sort((a, b) => b.score - a.score);
 
   return { rankedSales, standouts: standouts.slice(0, 30) };
+}
+
+export async function searchSales(query: string): Promise<RankedSale[]> {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const today = todayIsoDate();
+
+  const upcomingSales = await db
+    .select()
+    .from(sales)
+    .where(gte(sales.endDate, today));
+
+  if (upcomingSales.length === 0) return [];
+
+  const upcomingSaleIds = upcomingSales.map((s) => s.saleId);
+  const saleById = new Map(upcomingSales.map((s) => [s.saleId, s]));
+
+  const termConditions = terms.map(
+    (t) => sql`lower(${findings.description}) like ${"%" + t + "%"}`,
+  );
+  const orClause = termConditions.reduce((acc, cond) => or(acc, cond)!);
+
+  const matched = await db
+    .select()
+    .from(findings)
+    .where(and(inArray(findings.saleId, upcomingSaleIds), orClause));
+
+  if (matched.length === 0) return [];
+
+  const matchedBySale = new Map<string, typeof matched>();
+  for (const f of matched) {
+    const list = matchedBySale.get(f.saleId) ?? [];
+    list.push(f);
+    matchedBySale.set(f.saleId, list);
+  }
+
+  const matchedSaleIds = [...matchedBySale.keys()];
+
+  const allFindingsForSales = await db
+    .select()
+    .from(findings)
+    .where(inArray(findings.saleId, matchedSaleIds));
+
+  const allFindingsBySale = new Map<string, typeof allFindingsForSales>();
+  for (const f of allFindingsForSales) {
+    const list = allFindingsBySale.get(f.saleId) ?? [];
+    list.push(f);
+    allFindingsBySale.set(f.saleId, list);
+  }
+
+  const results: RankedSale[] = [];
+
+  for (const saleId of matchedSaleIds) {
+    const sale = saleById.get(saleId);
+    if (!sale) continue;
+
+    const saleMatched = matchedBySale.get(saleId) ?? [];
+    const saleAll = allFindingsBySale.get(saleId) ?? [];
+
+    const topFindings = saleMatched
+      .map((f) => ({
+        id: f.id,
+        imageUrl: f.imageUrl,
+        description: f.description,
+        score: scoreFinding(f.description),
+        tag: tagFinding(f.description),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const tally = { electronics: 0, kitsch: 0, collectibles: 0, furniture: 0 };
+    for (const f of saleAll) {
+      const tag = tagFinding(f.description);
+      if (tag === "electronics") tally.electronics++;
+      else if (tag === "kitsch") tally.kitsch++;
+      else if (tag === "collectible") tally.collectibles++;
+      else tally.furniture++;
+    }
+
+    results.push({
+      saleId: sale.saleId,
+      title: sale.title,
+      url: sale.url,
+      startDate: sale.startDate,
+      endDate: sale.endDate,
+      distanceMiles: sale.distanceMiles,
+      address: sale.address,
+      city: sale.city,
+      state: sale.state,
+      score: saleMatched.length,
+      totalFindings: saleAll.length,
+      topFindings,
+      tally,
+    });
+  }
+
+  results.sort((a, b) => b.score - a.score || a.distanceMiles - b.distanceMiles);
+  return results;
 }
 
 export async function getRecentFindingsContext(): Promise<string> {

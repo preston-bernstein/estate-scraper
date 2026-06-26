@@ -3,6 +3,7 @@ import type {
   Finding,
   FindingWithSale,
   Hunt,
+  RankedSale,
   SaleSummary,
   SettingsResponse,
   StatusResponse,
@@ -25,6 +26,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
     ...init,
   });
+
+  if (response.status === 401) {
+    userManager?.removeUser().catch(() => {});
+    throw new Error("Unauthorized");
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
@@ -86,6 +92,10 @@ export const api = {
       `/api/findings?q=${encodeURIComponent(keywords.join(","))}`,
     ),
   getDiscover: () => request<DiscoverResponse>("/api/discover"),
+  searchSales: (query: string) =>
+    request<{ sales: RankedSale[] }>(
+      `/api/discover/search?q=${encodeURIComponent(query)}`,
+    ),
   streamChat: async (
     message: string,
     history: { role: "user" | "assistant"; content: string }[],

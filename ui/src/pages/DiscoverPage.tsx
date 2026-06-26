@@ -20,15 +20,6 @@ function totalCounts(sales: RankedSale[]): Record<Category, number> {
   return counts;
 }
 
-function filterByText(sales: RankedSale[], query: string): RankedSale[] {
-  if (!query.trim()) return sales;
-  const q = query.toLowerCase();
-  return sales.filter((s) => {
-    const hay = [s.title, s.city, ...s.topFindings.map((f) => f.description)].join(" ").toLowerCase();
-    return hay.includes(q);
-  });
-}
-
 function filterByCategory(sales: RankedSale[], category: Category): RankedSale[] {
   if (category === "all") return sales;
   return sales.filter((s) => {
@@ -40,16 +31,13 @@ function filterByCategory(sales: RankedSale[], category: Category): RankedSale[]
   });
 }
 
-function DiscoverContent({ searchQuery }: { searchQuery: string }) {
+function DiscoverContent() {
   const [category, setCategory] = useState<Category>("all");
   const data = use(cached("discover", api.getDiscover));
 
-  // Text filter first, then category (AND semantics)
-  const textFiltered = filterByText(data.rankedSales, searchQuery);
-  const counts = totalCounts(textFiltered); // dynamic counts reflect current text filter
-  const filtered = filterByCategory(textFiltered, category);
+  const counts = totalCounts(data.rankedSales);
+  const filtered = filterByCategory(data.rankedSales, category);
 
-  // Standouts stay global — filtering them creates empty "wow" strips for niche queries
   const standouts =
     category === "all"
       ? data.standouts
@@ -64,18 +52,11 @@ function DiscoverContent({ searchQuery }: { searchQuery: string }) {
       {standouts.length > 0 && <StandoutScroll standouts={standouts.slice(0, 12)} />}
 
       {filtered.length === 0 ? (
-        <p className="text-zinc-400 text-sm py-8 text-center">
-          {searchQuery.trim()
-            ? `No sales match "${searchQuery}".`
-            : "No sales found for this category."}
-        </p>
+        <p className="text-zinc-400 text-sm py-8 text-center">No sales found for this category.</p>
       ) : (
         <section className="space-y-4">
           <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
             {filtered.length} sale{filtered.length !== 1 ? "s" : ""} ranked by score
-            {searchQuery.trim() && (
-              <span className="ml-1 font-normal normal-case">for "{searchQuery}"</span>
-            )}
           </h2>
           {filtered.map((sale, i) => (
             <RankedSaleCard key={sale.saleId} sale={sale} rank={i + 1} filter={category} />
@@ -83,6 +64,29 @@ function DiscoverContent({ searchQuery }: { searchQuery: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+function SearchContent({ searchQuery }: { searchQuery: string }) {
+  const data = use(cached("search:" + searchQuery, () => api.searchSales(searchQuery)));
+
+  if (data.sales.length === 0) {
+    return (
+      <p className="text-zinc-400 text-sm py-8 text-center">
+        No findings match "{searchQuery}".
+      </p>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+        {data.sales.length} sale{data.sales.length !== 1 ? "s" : ""} with findings for "{searchQuery}"
+      </h2>
+      {data.sales.map((sale, i) => (
+        <RankedSaleCard key={sale.saleId} sale={sale} rank={i + 1} filter="all" />
+      ))}
+    </section>
   );
 }
 
@@ -160,7 +164,11 @@ export function DiscoverPage() {
       </div>
 
       <Suspense fallback={<DiscoverSkeleton />}>
-        <DiscoverContent searchQuery={searchQuery} />
+        {searchQuery.trim() ? (
+          <SearchContent searchQuery={searchQuery.trim()} />
+        ) : (
+          <DiscoverContent />
+        )}
       </Suspense>
     </div>
   );

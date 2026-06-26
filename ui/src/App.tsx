@@ -6,7 +6,6 @@ import { LoginPage } from "./pages/LoginPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { DiscoverPage } from "./pages/DiscoverPage";
 import { BrowsePage } from "./pages/BrowsePage";
-import { CouchesPage } from "./pages/CouchesPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { HuntsPage } from "./pages/HuntsPage";
 import { PlanPage } from "./pages/PlanPage";
@@ -31,7 +30,6 @@ function App() {
             <Route path="plan" element={<PlanPage />} />
             <Route path="hunts" element={<HuntsPage />} />
             <Route path="history" element={<HistoryPage />} />
-            <Route path="couches" element={<CouchesPage />} />
             <Route path="sales/:id" element={<SaleDetailPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
