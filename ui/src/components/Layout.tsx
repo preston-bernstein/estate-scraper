@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { use, Suspense } from "react";
+import { LogOut } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 import { api } from "../lib/api";
 import { cached } from "../lib/cache";
+import { useAuth } from "../context/AuthContext";
 import { formatLastScanned } from "../lib/format";
 
 const tabs = [
@@ -21,11 +23,26 @@ function ScanStatus() {
   );
 }
 
-function UserAvatar() {
-  const me = use(cached("me", api.getMe));
+function UserMenu() {
+  const { user, logout } = useAuth();
+  const initials = user?.profile?.name
+    ? user.profile.name.slice(0, 2).toUpperCase()
+    : user?.profile?.email
+      ? user.profile.email.slice(0, 2).toUpperCase()
+      : "ME";
+
   return (
-    <div className="hidden h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-600 md:flex dark:bg-zinc-800 dark:text-zinc-300">
-      {me.sub.slice(0, 2).toUpperCase()}
+    <div className="hidden items-center gap-2 md:flex">
+      <div className="h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-600 flex dark:bg-zinc-800 dark:text-zinc-300">
+        {initials}
+      </div>
+      <button
+        onClick={() => logout()}
+        title="Sign out"
+        className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+      >
+        <LogOut size={15} />
+      </button>
     </div>
   );
 }
@@ -61,9 +78,7 @@ export function Layout() {
             ))}
           </nav>
 
-          <Suspense fallback={<div className="h-8 w-8 rounded-full bg-zinc-200 dark:bg-zinc-800" />}>
-            <UserAvatar />
-          </Suspense>
+          <UserMenu />
         </div>
       </header>
 

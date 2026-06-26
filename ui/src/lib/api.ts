@@ -7,11 +7,20 @@ import type {
   SettingsResponse,
   StatusResponse,
 } from "../types";
+import { userManager } from "./auth";
+
+async function authHeader(): Promise<Record<string, string>> {
+  if (!userManager) return {};
+  const user = await userManager.getUser();
+  if (!user?.access_token) return {};
+  return { Authorization: `Bearer ${user.access_token}` };
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
       "Content-Type": "application/json",
+      ...(await authHeader()),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -86,7 +95,7 @@ export const api = {
   ) => {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeader()) },
       body: JSON.stringify({ message, history }),
     });
     if (!res.ok || !res.body) {
