@@ -3,7 +3,7 @@ import {
   OLLAMA_HOST,
   OLLAMA_MODEL,
   PHASH_HAMMING_THRESHOLD,
-  PREFILTER_PROMPT,
+  LOCAL_GATE_PROMPT,
   PREFILTER_WORKERS,
   RUNPOD_API_KEY,
   RUNPOD_ENDPOINT_ID,
@@ -113,24 +113,29 @@ async function computeDHash(buffer: Buffer): Promise<bigint> {
 
 // ─── Stage 2: Ollama pre-filter ───────────────────────────────────────────────
 
-async function prefilterWithOllama(imageBase64: string): Promise<boolean> {
+async function runLocalGate(imageBase64: string): Promise<boolean> {
+  // Runs local Ollama with a permissive prompt. Any non-NOTHING response passes
+  // the image through to RunPod. This gates on "is there anything here at all"
+  // rather than quality — RunPod handles quality on the hits.
   try {
     const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        messages: [{ role: "user", content: PREFILTER_PROMPT, images: [imageBase64] }],
+        messages: [{ role: "user", content: LOCAL_GATE_PROMPT, images: [imageBase64] }],
         stream: false,
-        options: { temperature: 0, num_predict: 5 },
+        options: { temperature: 0 },
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(60_000),
     });
-    if (!response.ok) return true;
+    if (!response.ok) return true; // fail open
     const payload = (await response.json()) as { message?: { content?: string } };
-    return (payload.message?.content ?? "").trim().toUpperCase().startsWith("YES");
+    const text = (payload.message?.content ?? "").trim();
+    // Pass through unless model is confident there is nothing
+    return text.toUpperCase() !== "NOTHING" && text.length > 0;
   } catch {
-    return true; // fail open — never drop an image due to a prefilter error
+    return true; // fail open
   }
 }
 
@@ -283,10 +288,12 @@ export async function* processSalesStream(
     maxImages?: number;
     skipUrls?: Set<string>;
     workers?: number;
+    dryRun?: boolean;
   } = {},
 ): AsyncGenerator<VisionEvent> {
   const skipUrls = options.skipUrls ?? new Set<string>();
   const workers = options.workers ?? VISION_WORKERS;
+  const dryRun = options.dryRun ?? false;
   const totalSales = sales.length;
 
   for (const [saleIdx, sale] of sales.entries()) {
@@ -316,6 +323,9 @@ export async function* processSalesStream(
       (x): x is { url: string; buffer: Buffer } => x !== null,
     );
 
+    const dupesRemoved = candidateUrls.length - uniqueImages.length;
+    console.log(`  [dedup]     ${candidateUrls.length} → ${uniqueImages.length} unique${dupesRemoved > 0 ? ` (${dupesRemoved} near-dupes removed)` : " (no dupes found)"}`);
+
     // ── Phase 2: Ollama pre-filter (RunPod mode only) ────────────────────────
     let filteredImages = uniqueImages;
     if (RUNPOD_ENDPOINT_ID && uniqueImages.length > 0) {
@@ -323,17 +333,20 @@ export async function* processSalesStream(
         uniqueImages,
         PREFILTER_WORKERS,
         async (img) => {
-          const thumb = await sharp(img.buffer)
-            .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-            .jpeg({ quality: 80 })
+          // Use 1024px so local model sees enough detail to detect items
+          const sized = await sharp(img.buffer)
+            .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+            .jpeg({ quality: 85 })
             .toBuffer();
-          const pass = await prefilterWithOllama(thumb.toString("base64"));
+          const pass = await runLocalGate(sized.toString("base64"));
           return pass ? img : null;
         },
       );
       filteredImages = prefilterResults.filter(
         (x): x is { url: string; buffer: Buffer } => x !== null,
       );
+      const prefilterRemoved = uniqueImages.length - filteredImages.length;
+      console.log(`  [local gate] ${uniqueImages.length} → ${filteredImages.length} passed to RunPod${prefilterRemoved > 0 ? ` (${prefilterRemoved} rejected as irrelevant)` : " (all passed)"}`);
     }
 
     const total = filteredImages.length;
@@ -353,6 +366,12 @@ export async function* processSalesStream(
     };
 
     // ── Phase 3: Full vision analysis ─────────────────────────────────────────
+    if (dryRun) {
+      console.log(`  [dry-run]   would send ${total} images to vision model`);
+      yield { type: "sale_done", saleId: sale.saleId, title: sale.title, url: sale.url, imagesProcessed: 0, imagesWithFindings: 0, errors: 0 };
+      continue;
+    }
+
     let errors = 0;
     const results = await mapPool(filteredImages, workers, (img) =>
       processImage(img.url, sale.saleId, img.buffer),

@@ -14,6 +14,7 @@ type ScanOptions = {
   maxSales?: number;
   maxImages?: number;
   skipVision?: boolean;
+  dryRun?: boolean;
 };
 
 function parseArgs(argv: string[]): ScanOptions {
@@ -29,6 +30,8 @@ function parseArgs(argv: string[]): ScanOptions {
       options.radiusMiles = Number(argv[++index]);
     } else if (arg === "--skip-vision") {
       options.skipVision = true;
+    } else if (arg === "--dry-run") {
+      options.dryRun = true;
     }
   }
 
@@ -100,6 +103,7 @@ async function main() {
 
     for await (const event of processSalesStream(scrapedSales, {
       maxImages: args.maxImages,
+      dryRun: args.dryRun,
       skipUrls,
     })) {
       writer.pushEvent(event);

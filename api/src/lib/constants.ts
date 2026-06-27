@@ -18,9 +18,14 @@ export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
 export const PHASH_HAMMING_THRESHOLD = 10;
 
-export const PREFILTER_PROMPT =
-  "Does this image show furniture, artwork, collectibles, tools, electronics, video games, " +
-  "or any household items of any kind? Answer YES or NO only.";
+// Permissive gate prompt for local Ollama — intentionally broad so the bar to
+// pass through to RunPod is LOW. We want false negatives to mean "truly empty."
+// RunPod handles quality; local handles gating.
+export const LOCAL_GATE_PROMPT =
+  "List any objects, furniture, or items visible in this image — one per line. " +
+  "Be broad: include anything man-made or placed, even if you are unsure what it is. " +
+  "If the image shows only empty floor, bare wall, ceiling, outdoor area, or has no " +
+  "discernible objects at all, respond with exactly one word: NOTHING";
 
 export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
 export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";
