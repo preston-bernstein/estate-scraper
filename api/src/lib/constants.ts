@@ -18,14 +18,37 @@ export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
 export const PHASH_HAMMING_THRESHOLD = 10;
 
-// Permissive gate prompt for local Ollama — intentionally broad so the bar to
-// pass through to RunPod is LOW. We want false negatives to mean "truly empty."
-// RunPod handles quality; local handles gating.
+// Buyer-profile gate: combines junk rejection + taste matching in one pass.
+// Defaults to PASS on any ambiguity — RunPod handles quality, local handles routing.
 export const LOCAL_GATE_PROMPT =
-  "List any objects, furniture, or items visible in this image — one per line. " +
-  "Be broad: include anything man-made or placed, even if you are unsure what it is. " +
-  "If the image shows only empty floor, bare wall, ceiling, outdoor area, or has no " +
-  "discernible objects at all, respond with exactly one word: NOTHING";
+  "You are a quality and value scout reviewing estate sale photos. " +
+  "Reply with exactly one word: PASS or SKIP.\n\n" +
+  "PASS — send to detailed analysis — if the image shows any of these value signals:\n" +
+  "- Maker's marks, labels, hallmarks, signatures, or legible brand names on any item\n" +
+  "- Solid wood furniture: visible grain, dovetail joints, carved detail, antique or mid-century style\n" +
+  "- Sterling silver, fine china, art pottery, crystal, or silverplate\n" +
+  "- Any framed artwork, paintings, prints, or sculpture\n" +
+  "- Vintage or antique items with visible age patina, hand construction, or period detail\n" +
+  "- Kitsch and camp: velvet paintings, taxidermy, ceramic novelties, tiki, outsider art\n" +
+  "- Vintage electronics: tube radios, console TVs, reel-to-reel, turntables, hi-fi receivers, vintage computers\n" +
+  "- Gaming: consoles, handhelds, cartridges, arcade cabinets\n" +
+  "- High-value modern electronics: Apple devices, professional cameras, high-end audio equipment\n" +
+  "- Vintage jewelry, watches, or designer accessories\n" +
+  "- Complete sets: china service, silver flatware, crystal stemware, barware\n" +
+  "- Clocks, lamps, or decorative objects that appear handmade or antique\n\n" +
+  "SKIP — not worth detailed analysis — if the image shows primarily:\n" +
+  "- Building exterior, driveway, yard, fence, garage door, street, or sky\n" +
+  "- Completely empty room, bare wall, bare floor, or ceiling\n" +
+  "- Sale signs, price boards, address signs, or terms and conditions\n" +
+  "- Infrastructure only: water heater, HVAC unit, electrical panel, smoke detector\n" +
+  "- Vehicles as the main subject\n" +
+  "- People or pets as the main subject\n" +
+  "- Clearly particle board, laminate, or flat-pack furniture with no quality indicators\n" +
+  "- Generic mass-produced plastic housewares: storage bins, plastic containers, basic organizers\n" +
+  "- Fast fashion or clearly cheap clothing with no vintage or designer signals\n" +
+  "- Commodity electronics only: charging cables, USB hubs, generic phone cases, basic \$10 accessories\n" +
+  "- Cardboard boxes or garbage bags with no visible item contents\n\n" +
+  "When in doubt: PASS. Missing a valuable item is worse than sending an extra photo."
 
 export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
 export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";

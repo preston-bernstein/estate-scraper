@@ -111,6 +111,36 @@ async function computeDHash(buffer: Buffer): Promise<bigint> {
   return hash;
 }
 
+// ─── Stage 1b: Image quality gate (blur + darkness, no model needed) ─────────
+
+async function passesQualityGate(buffer: Buffer): Promise<boolean> {
+  try {
+    const { data, info } = await sharp(buffer)
+      .resize(256, 256, { fit: "inside" })
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixels = data.length;
+
+    // Darkness: mean brightness below threshold → unusable
+    let sum = 0;
+    for (let i = 0; i < pixels; i++) sum += data[i]!;
+    const mean = sum / pixels;
+    if (mean < 20) return false; // near-black image
+
+    // Blur: variance of pixel values — blurry images have low variance
+    let variance = 0;
+    for (let i = 0; i < pixels; i++) variance += (data[i]! - mean) ** 2;
+    variance /= pixels;
+    if (variance < 100) return false; // nearly uniform = blank or very blurry
+
+    return true;
+  } catch {
+    return true; // fail open
+  }
+}
+
 // ─── Stage 2: Ollama pre-filter ───────────────────────────────────────────────
 
 async function runLocalGate(imageBase64: string): Promise<boolean> {
@@ -131,9 +161,9 @@ async function runLocalGate(imageBase64: string): Promise<boolean> {
     });
     if (!response.ok) return true; // fail open
     const payload = (await response.json()) as { message?: { content?: string } };
-    const text = (payload.message?.content ?? "").trim();
-    // Pass through unless model is confident there is nothing
-    return text.toUpperCase() !== "NOTHING" && text.length > 0;
+    const text = (payload.message?.content ?? "").trim().toUpperCase();
+    // Model should reply PASS or SKIP; any non-SKIP response passes through
+    return !text.startsWith("SKIP");
   } catch {
     return true; // fail open
   }
@@ -333,7 +363,9 @@ export async function* processSalesStream(
         uniqueImages,
         PREFILTER_WORKERS,
         async (img) => {
-          // Use 1024px so local model sees enough detail to detect items
+          // Quality gate first — no model call needed for dark/blurry images
+          if (!(await passesQualityGate(img.buffer))) return null;
+          // Buyer-profile gate via local Ollama
           const sized = await sharp(img.buffer)
             .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
             .jpeg({ quality: 85 })
