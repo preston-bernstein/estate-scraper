@@ -1,6 +1,6 @@
 # estate-scraper
 
-Scrapes estatesales.net listings, runs each photo through a vision model (local Ollama or RunPod serverless), and surfaces sales worth attending based on configurable keyword hunts.
+Scrapes estatesales.net listings and surfaces sales worth attending based on configurable keyword hunts. The vision pipeline runs a cost cascade — cheap signals gate expensive compute at each stage so RunPod serverless inference is only invoked on images that survive free pixel checks, a local Ollama gate, and adaptive sampling.
 
 [![CI](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
@@ -15,22 +15,24 @@ estatesales.net
   Scraper (Node.js)
       │  listings within configured radius
       ▼
-  pHash dedup
-      │  near-duplicate images removed before any model work
+  pHash dedup                              free  — Sharp pixel math, no model
+      │  near-duplicate images removed
       ▼
-  Adaptive sampling          ← decides which images enter the next stage
-      │  lead 25% → score → tail probe if weak → EARLY_STOP or full pass
+  Adaptive sampling                        free  — score arithmetic
+      │  lead 25% → score → tail probe if weak → EARLY_STOP
+      │  sales with no signal dropped before any model is called
       ▼
-  Per-image pre-filter       ← runs inside each sampled image
-      │  quality gate: dark / blurry images dropped (no model)
-      │  local Qwen3 gate: irrelevant images skipped  [RunPod mode only]
+  Quality gate                             free  — brightness + variance check
+      │  dark / blurry images rejected
       ▼
-  Full vision
-      │  Ollama local  OR  RunPod serverless (set RUNPOD_ENDPOINT_ID)
+  Local Qwen3 gate                         cheap — local GPU, ~1 s/image
+      │  exteriors, empty rooms, HVAC → SKIP     [RunPod mode only]
+      ▼
+  Full vision                              expensive — RunPod serverless or local Ollama
       │  qwen3-vl:30b · confidence tags ([high] / [medium] / [low])
       ▼
-  Scoring + oracle
-      │  uncertain-zone sales (score 0.1–0.6) → cloud VL model
+  Oracle escalation                        expensive — cloud VL model, per sale
+      │  uncertain-zone sales (score 0.1–0.6) only
       ▼
   SQLite (Drizzle ORM)
       │
@@ -38,23 +40,30 @@ estatesales.net
   Hono API  ←→  React UI
 ```
 
-### Pipeline stages
+### Cost cascade
 
-**pHash deduplication** — all candidate images are downloaded and fingerprinted with a 9×8 dHash. Near-duplicates (Hamming distance ≤ 10) are dropped before any model work. This removes CDN-resized copies and repeated hero shots that inflate image counts.
+Each stage is ordered by cost. A free check gates a cheap check; a cheap check gates an expensive one. RunPod inference is only invoked on images that survive everything upstream.
 
-**Adaptive sampling** — the unique image set is sampled in phases to avoid analyzing every photo in every listing:
+| Stage | Cost | What it rejects |
+|---|---|---|
+| pHash dedup | free | Near-duplicate images (CDN resizes, repeated hero shots) |
+| Adaptive sampling | free | Entire sales with no signal in lead + tail probe |
+| Quality gate | free | Dark or blurry images (pixel variance / mean brightness) |
+| Local Qwen3 gate | cheap (local GPU) | Exteriors, empty rooms, HVAC, price boards — active in RunPod mode only |
+| Full vision | expensive (RunPod or local Ollama) | — |
+| Oracle escalation | expensive (cloud VL model) | Skipped unless sale score is in uncertain zone (0.1–0.6) |
 
-1. **Lead sample** — analyze the first 25%, compute a weighted sale score
+The local gate only activates when `RUNPOD_ENDPOINT_ID` is set. Running a second local model call to gate the first local model call has no cost benefit; the gate exists to reduce paid RunPod invocations.
+
+### Adaptive sampling
+
+1. **Lead sample** — analyze the first 25% of unique images, compute a weighted sale score
 2. **High confidence** (score ≥ 0.8) — proceed to full pass immediately
 3. **Low signal** (score < 0.1) — probe 8 random images from the last 30%
-4. **Tail probe empty** — sale is dropped (`EARLY_STOP`)
-5. **Uncertain zone** (score 0.1–0.6) — full pass, then oracle escalation
+4. **Tail probe empty** — sale is dropped (`EARLY_STOP`), no further model calls
+5. **Uncertain zone** (score 0.1–0.6 after full pass) — escalate to oracle
 
-**Per-image pre-filter** — runs on each sampled image before the expensive full-vision call:
-- **Quality gate** — rejects images below brightness or variance thresholds (no model, ~1 ms)
-- **Local Qwen3 gate** — routes irrelevant photos (empty rooms, exteriors, HVAC) to `SKIP`; active only when `RUNPOD_ENDPOINT_ID` is set, since gating local Ollama calls with another local Ollama call has no cost benefit
-
-**Full vision** — `qwen3-vl:30b` via Ollama (local GPU) or RunPod serverless. Each finding line includes a plain-text confidence tag (`[high]`, `[medium]`, or `[low]`). Plain text outperformed JSON-constrained output 89% vs 50% in eval.
+Each finding line carries a plain-text confidence tag (`[high]`, `[medium]`, or `[low]`). Plain text outperformed JSON-constrained output 89% vs 50% in eval.
 
 ### Hunt matching
 
