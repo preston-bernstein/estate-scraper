@@ -1,6 +1,6 @@
 # estate-scraper
 
-Scrapes estatesales.net listings, runs each photo through a local vision model, and surfaces sales worth attending based on configurable keyword hunts.
+Scrapes estatesales.net listings, runs each photo through a vision model (local Ollama or RunPod serverless), and surfaces sales worth attending based on configurable keyword hunts.
 
 [![CI](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
@@ -15,12 +15,22 @@ estatesales.net
   Scraper (Node.js)
       │  listings within configured radius
       ▼
-  Vision pipeline (Ollama)
-      │  adaptive image sampling
-      │  qwen2.5vl:7b-q8_0 on local GPU
+  pHash dedup
+      │  near-duplicate images removed before any model work
+      ▼
+  Adaptive sampling          ← decides which images enter the next stage
+      │  lead 25% → score → tail probe if weak → EARLY_STOP or full pass
+      ▼
+  Per-image pre-filter       ← runs inside each sampled image
+      │  quality gate: dark / blurry images dropped (no model)
+      │  local Qwen3 gate: irrelevant images skipped  [RunPod mode only]
+      ▼
+  Full vision
+      │  Ollama local  OR  RunPod serverless (set RUNPOD_ENDPOINT_ID)
+      │  qwen3-vl:30b · confidence tags ([high] / [medium] / [low])
       ▼
   Scoring + oracle
-      │  uncertain-zone sales → remote VL model (RunPod / Together / Hyperbolic)
+      │  uncertain-zone sales (score 0.1–0.6) → cloud VL model
       ▼
   SQLite (Drizzle ORM)
       │
@@ -28,17 +38,23 @@ estatesales.net
   Hono API  ←→  React UI
 ```
 
-### Adaptive image sampling
+### Pipeline stages
 
-Analyzing every photo in every listing is expensive. The pipeline uses staged sampling to bail early on duds and focus compute where it matters:
+**pHash deduplication** — all candidate images are downloaded and fingerprinted with a 9×8 dHash. Near-duplicates (Hamming distance ≤ 10) are dropped before any model work. This removes CDN-resized copies and repeated hero shots that inflate image counts.
 
-1. **Lead sample** — analyze the first 25% of images, compute a sale score
-2. **High confidence** (score ≥ 0.8) — continue to full analysis immediately
-3. **Low signal** (score < 0.1) — probe 8 random images from the last 30% of the listing
-4. **Tail probe comes up empty** — sale is dropped (`EARLY_STOP`)
-5. **Uncertain zone** (score 0.1–0.6 after full analysis) — escalate to oracle
+**Adaptive sampling** — the unique image set is sampled in phases to avoid analyzing every photo in every listing:
 
-Each finding line includes a plain-text confidence tag (`[high]`, `[medium]`, or `[low]`). Plain text outperformed JSON-constrained output 89% vs 50% in eval, so that's what ships.
+1. **Lead sample** — analyze the first 25%, compute a weighted sale score
+2. **High confidence** (score ≥ 0.8) — proceed to full pass immediately
+3. **Low signal** (score < 0.1) — probe 8 random images from the last 30%
+4. **Tail probe empty** — sale is dropped (`EARLY_STOP`)
+5. **Uncertain zone** (score 0.1–0.6) — full pass, then oracle escalation
+
+**Per-image pre-filter** — runs on each sampled image before the expensive full-vision call:
+- **Quality gate** — rejects images below brightness or variance thresholds (no model, ~1 ms)
+- **Local Qwen3 gate** — routes irrelevant photos (empty rooms, exteriors, HVAC) to `SKIP`; active only when `RUNPOD_ENDPOINT_ID` is set, since gating local Ollama calls with another local Ollama call has no cost benefit
+
+**Full vision** — `qwen3-vl:30b` via Ollama (local GPU) or RunPod serverless. Each finding line includes a plain-text confidence tag (`[high]`, `[medium]`, or `[low]`). Plain text outperformed JSON-constrained output 89% vs 50% in eval.
 
 ### Hunt matching
 
@@ -53,8 +69,10 @@ After attending a sale, users log an outcome (`good` / `meh` / `waste`). Outcome
 | Layer | Tech |
 |---|---|
 | Scraper | Node.js, custom HTML parser |
-| Vision | Ollama — `qwen2.5vl:7b-q8_0` on AMD RX 9070 XT |
-| Oracle | OpenAI-compatible API (RunPod, Together, Hyperbolic) |
+| Image pre-filter | Sharp (pHash dedup, quality gate) |
+| Vision — local | Ollama `qwen3-vl:30b` on AMD RX 9070 XT |
+| Vision — cloud | RunPod serverless (`RUNPOD_ENDPOINT_ID`; local Qwen3 gate activates) |
+| Oracle | OpenAI-compatible API (RunPod, Together, Hyperbolic) for uncertain-zone sales |
 | API | Hono, SQLite, Drizzle ORM |
 | UI | React, Vite, Tailwind CSS |
 | Auth | JWT via OIDC / Authentik (stub mode for local dev) |
@@ -100,11 +118,14 @@ All config lives in `api/.env`. See [`api/.env.example`](api/.env.example) for t
 |---|---|---|
 | `HOME_LAT` / `HOME_LON` | — | Center point for radius filtering |
 | `HOME_ADDRESS` / `HOME_CITY` / `HOME_STATE` / `HOME_ZIP` | — | Display only, not geocoded |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
-| `OLLAMA_MODEL` | `qwen2.5vl:7b-q8_0` | Any Ollama vision model |
+| `OLLAMA_HOST` | `http://localhost:11436` | Ollama endpoint (broker port recommended) |
+| `OLLAMA_MODEL` | `qwen3-vl:30b` | Any Ollama vision model |
+| `RUNPOD_ENDPOINT_ID` | — | RunPod serverless endpoint; enables local Qwen3 gate |
+| `RUNPOD_API_KEY` | — | RunPod API key |
+| `RUNPOD_MODEL` | `Qwen/Qwen3-VL-32B-Instruct` | Model served on the RunPod endpoint |
 | `AUTH_MODE` | `stub` | `stub` · `forwarded` · `jwt` |
 | `OIDC_ISSUER` | — | Required when `AUTH_MODE=jwt` |
-| `ORACLE_API_BASE` | — | OpenAI-compat base URL (optional) |
+| `ORACLE_API_BASE` | — | OpenAI-compat base URL for uncertain-zone escalation |
 | `ORACLE_API_KEY` | — | Key for oracle model |
 | `ORACLE_MODEL` | — | e.g. `Qwen/Qwen2.5-VL-72B-Instruct` |
 
