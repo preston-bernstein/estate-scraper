@@ -18,37 +18,30 @@ export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
 export const PHASH_HAMMING_THRESHOLD = 10;
 
-// Buyer-profile gate: combines junk rejection + taste matching in one pass.
-// Defaults to PASS on any ambiguity — RunPod handles quality, local handles routing.
-export const LOCAL_GATE_PROMPT =
-  "You are a quality and value scout reviewing estate sale photos. " +
-  "Reply with exactly one word: PASS or SKIP.\n\n" +
-  "PASS — send to detailed analysis — if the image shows any of these value signals:\n" +
-  "- Maker's marks, labels, hallmarks, signatures, or legible brand names on any item\n" +
-  "- Solid wood furniture: visible grain, dovetail joints, carved detail, antique or mid-century style\n" +
-  "- Sterling silver, fine china, art pottery, crystal, or silverplate\n" +
-  "- Any framed artwork, paintings, prints, or sculpture\n" +
-  "- Vintage or antique items with visible age patina, hand construction, or period detail\n" +
-  "- Kitsch and camp: velvet paintings, taxidermy, ceramic novelties, tiki, outsider art\n" +
-  "- Vintage electronics: tube radios, console TVs, reel-to-reel, turntables, hi-fi receivers, vintage computers\n" +
-  "- Gaming: consoles, handhelds, cartridges, arcade cabinets\n" +
-  "- High-value modern electronics: Apple devices, professional cameras, high-end audio equipment\n" +
-  "- Vintage jewelry, watches, or designer accessories\n" +
-  "- Complete sets: china service, silver flatware, crystal stemware, barware\n" +
-  "- Clocks, lamps, or decorative objects that appear handmade or antique\n\n" +
-  "SKIP — not worth detailed analysis — if the image shows primarily:\n" +
-  "- Building exterior, driveway, yard, fence, garage door, street, or sky\n" +
-  "- Completely empty room, bare wall, bare floor, or ceiling\n" +
-  "- Sale signs, price boards, address signs, or terms and conditions\n" +
-  "- Infrastructure only: water heater, HVAC unit, electrical panel, smoke detector\n" +
-  "- Vehicles as the main subject\n" +
-  "- People or pets as the main subject\n" +
-  "- Clearly particle board, laminate, or flat-pack furniture with no quality indicators\n" +
-  "- Generic mass-produced plastic housewares: storage bins, plastic containers, basic organizers\n" +
-  "- Fast fashion or clearly cheap clothing with no vintage or designer signals\n" +
-  "- Commodity electronics only: charging cables, USB hubs, generic phone cases, basic \$10 accessories\n" +
-  "- Cardboard boxes or garbage bags with no visible item contents\n\n" +
-  "When in doubt: PASS. Missing a valuable item is worse than sending an extra photo."
+// ── Gate prompt: system + user split ─────────────────────────────────────────
+// Research: long text in the user message competes with image tokens for VLM attention
+// (visual attention degrades as text-to-token ratio rises). Keeping criteria in the system
+// message leaves the user turn as image + minimal question → maximum visual focus.
+// /no_think tells Qwen3 models to answer directly without chain-of-thought preamble.
+export const LOCAL_GATE_SYSTEM =
+  "/no_think\n" +
+  "You route estate sale photos. Reply with exactly one word: PASS or SKIP.\n\n" +
+  "SKIP — no resale value:\n" +
+  "exterior, driveway, yard, empty room, bare wall/floor/ceiling, sale sign, price board, " +
+  "HVAC/electrical panel/water heater, vehicle, person/pet, " +
+  "cardboard boxes only, plastic storage bins/organizers, " +
+  "flat-pack or particle-board furniture with no quality markers, " +
+  "generic mass-market clothing with no brand or vintage signals, " +
+  "cables/chargers/USB hubs/phone cases as the only items\n\n" +
+  "PASS — may have resale value (uncertain → always PASS):\n" +
+  "any furniture (wood, upholstered, metal — any style), art (framed or unframed), " +
+  "electronics (vintage or modern), collectibles, jewelry, watches, " +
+  "clothing with visible brand or vintage character, tools, musical instruments, " +
+  "china/silver/crystal, lamps, clocks, books with readable titles, games, toys";
+
+// Minimal user-turn content — image is attached here; brief question keeps text tokens low
+// so the model's attention budget stays on the image rather than re-reading criteria.
+export const LOCAL_GATE_PROMPT = "PASS or SKIP?"
 
 export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
 export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";

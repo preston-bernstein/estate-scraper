@@ -3,6 +3,7 @@ import {
   OLLAMA_HOST,
   OLLAMA_MODEL,
   PHASH_HAMMING_THRESHOLD,
+  LOCAL_GATE_SYSTEM,
   LOCAL_GATE_PROMPT,
   PREFILTER_WORKERS,
   RUNPOD_API_KEY,
@@ -144,26 +145,35 @@ async function passesQualityGate(buffer: Buffer): Promise<boolean> {
 // ─── Stage 2: Ollama pre-filter ───────────────────────────────────────────────
 
 async function runLocalGate(imageBase64: string): Promise<boolean> {
-  // Runs local Ollama with a permissive prompt. Any non-NOTHING response passes
-  // the image through to RunPod. This gates on "is there anything here at all"
-  // rather than quality — RunPod handles quality on the hits.
+  // System message carries criteria (keeps text tokens out of the user turn so the
+  // model's attention budget stays on the image). User turn is image + minimal question.
+  // keep_alive keeps 30B model hot in VRAM across the full 6-hour batch window.
+  // num_predict:10 prevents over-generation; /no_think suppresses Qwen3 CoT preamble.
   try {
     const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        messages: [{ role: "user", content: LOCAL_GATE_PROMPT, images: [imageBase64] }],
+        messages: [
+          { role: "system", content: LOCAL_GATE_SYSTEM },
+          { role: "user", content: LOCAL_GATE_PROMPT, images: [imageBase64] },
+        ],
         stream: false,
-        options: { temperature: 0 },
+        keep_alive: "2h",
+        options: { temperature: 0, num_predict: 10 },
       }),
       signal: AbortSignal.timeout(60_000),
     });
-    if (!response.ok) return true; // fail open
+    if (!response.ok) return true; // fail open on broker 503 / outside-window
     const payload = (await response.json()) as { message?: { content?: string } };
-    const text = (payload.message?.content ?? "").trim().toUpperCase();
-    // Model should reply PASS or SKIP; any non-SKIP response passes through
-    return !text.startsWith("SKIP");
+    const raw = (payload.message?.content ?? "").trim();
+    // Strip Qwen3 <think>...</think> blocks if /no_think didn't suppress them
+    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    // Use the LAST non-empty word — model sometimes prefixes a brief note
+    const words = stripped.split(/\s+/).filter(Boolean);
+    const decision = (words[words.length - 1] ?? "").toUpperCase();
+    return decision !== "SKIP";
   } catch {
     return true; // fail open
   }
