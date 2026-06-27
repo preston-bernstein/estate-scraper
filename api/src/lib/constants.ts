@@ -12,7 +12,7 @@ export const HOME = {
 
 export const DEFAULT_RADIUS_MILES = 30;
 
-export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://YOUR_DESKTOP_IP:11434";
+export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://localhost:11436";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
 export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
