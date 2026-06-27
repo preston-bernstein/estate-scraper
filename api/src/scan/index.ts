@@ -110,7 +110,9 @@ async function main() {
         console.log(
           `\n[${event.saleIdx + 1}/${event.totalSales}] ${event.title.slice(0, 60)}`,
         );
-        console.log(`  ${event.total} images…`);
+        const reduction = event.originalTotal - event.total;
+        const suffix = reduction > 0 ? ` (${event.originalTotal} → ${event.total} after dedup/prefilter)` : "";
+        console.log(`  ${event.total} images…${suffix}`);
       } else if (event.type === "finding") {
         totalFindings += 1;
         saleBuffer.push({ imageUrl: event.imageUrl, description: event.description });

@@ -13,8 +13,18 @@ export const HOME = {
 export const DEFAULT_RADIUS_MILES = 30;
 
 export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://YOUR_DESKTOP_IP:11434";
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5vl:7b-q8_0";
-export const VISION_WORKERS = 6;
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
+export const VISION_WORKERS = 2;
+export const PREFILTER_WORKERS = 4;
+export const PHASH_HAMMING_THRESHOLD = 10;
+
+export const PREFILTER_PROMPT =
+  "Does this image show furniture, artwork, collectibles, tools, electronics, video games, " +
+  "or any household items of any kind? Answer YES or NO only.";
+
+export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
+export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";
+export const RUNPOD_MODEL = process.env.RUNPOD_MODEL ?? "Qwen/Qwen3-VL-32B-Instruct";
 
 export const FETCH_HEADERS = {
   "User-Agent":
