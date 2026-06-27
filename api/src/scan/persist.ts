@@ -1,36 +1,68 @@
+import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { findings, sales, userSettings } from "../db/schema.js";
-import { DEFAULT_RADIUS_MILES } from "../lib/constants.js";
+import { DEFAULT_RADIUS_MILES } from "../lib/scraping.js";
+import type { AnalysisPhase, Confidence } from "../vision/index.js";
 import type { ScrapedSale } from "../scraper/index.js";
 import { DEV_USER_SUB } from "../types/env.js";
-import { eq } from "drizzle-orm";
 
 export async function getProcessedImageUrls(): Promise<Set<string>> {
-  const rows = await db
-    .select({ imageUrl: findings.imageUrl })
-    .from(findings);
-
+  const rows = await db.select({ imageUrl: findings.imageUrl }).from(findings);
   return new Set(rows.map((row) => row.imageUrl));
 }
 
 export async function upsertSale(sale: ScrapedSale, scrapedAt: string) {
-  await db.insert(sales).values({
-    saleId: sale.saleId,
-    title: sale.title,
-    url: sale.url,
-    startDate: sale.startDate,
-    endDate: sale.endDate,
-    address: sale.address,
-    city: sale.city,
-    state: sale.state,
-    zip: sale.zip,
-    lat: sale.lat,
-    lon: sale.lon,
-    distanceMiles: sale.distanceMiles,
-    scrapedAt,
-  }).onConflictDoNothing();
+  await db
+    .insert(sales)
+    .values({
+      saleId: sale.saleId,
+      title: sale.title,
+      url: sale.url,
+      startDate: sale.startDate,
+      endDate: sale.endDate,
+      address: sale.address,
+      city: sale.city,
+      state: sale.state,
+      zip: sale.zip,
+      lat: sale.lat,
+      lon: sale.lon,
+      distanceMiles: sale.distanceMiles,
+      scrapedAt,
+      imageCount: sale.imageUrls.length,
+    })
+    .onConflictDoNothing();
 }
 
+export async function updateSaleAnalysis(
+  saleId: string,
+  imagesAnalyzed: number,
+  analysisPhase: AnalysisPhase,
+) {
+  await db
+    .update(sales)
+    .set({ imagesAnalyzed, analysisPhase })
+    .where(eq(sales.saleId, saleId));
+}
+
+export async function updateSaleOracle(
+  saleId: string,
+  oracleScore: number,
+  oracleVerdict: string,
+  oracleShouldAttend: boolean,
+  oracleTopItems: string[],
+) {
+  await db
+    .update(sales)
+    .set({
+      oracleScore,
+      oracleVerdict,
+      oracleShouldAttend,
+      oracleTopItems: JSON.stringify(oracleTopItems),
+    })
+    .where(eq(sales.saleId, saleId));
+}
+
+// Legacy single-insert for the import tool (no confidence/position data).
 export async function insertFinding(
   saleId: string,
   imageUrl: string,
@@ -45,7 +77,12 @@ export async function insertFinding(
 
 export async function insertFindingsBatch(
   saleId: string,
-  batch: Array<{ imageUrl: string; description: string }>,
+  batch: Array<{
+    imageUrl: string;
+    description: string;
+    confidence: Confidence | null;
+    imagePositionPct: number;
+  }>,
   scrapedAt: string,
 ): Promise<void> {
   if (batch.length === 0) return;
@@ -53,7 +90,14 @@ export async function insertFindingsBatch(
     for (const f of batch) {
       await tx
         .insert(findings)
-        .values({ saleId, imageUrl: f.imageUrl, description: f.description, scrapedAt })
+        .values({
+          saleId,
+          imageUrl: f.imageUrl,
+          description: f.description,
+          scrapedAt,
+          confidence: f.confidence,
+          imagePositionPct: f.imagePositionPct,
+        })
         .onConflictDoNothing();
     }
   });

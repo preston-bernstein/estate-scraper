@@ -9,6 +9,7 @@ export const userManager = import.meta.env.VITE_OIDC_AUTHORITY
       response_type: "code",
       scope: "openid profile email",
       userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-      automaticSilentRenew: true,
+      automaticSilentRenew: false,
+      monitorSession: false,
     })
   : null;

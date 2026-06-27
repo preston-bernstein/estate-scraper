@@ -4,24 +4,32 @@ import { DEV_USER_SUB, type AppEnv } from "../types/env.js";
 
 const AUTH_MODE = process.env.AUTH_MODE ?? "stub";
 
-// Lazy-init so JWKS is only fetched when AUTH_MODE=jwt
-let JWKS: ReturnType<typeof createRemoteJWKSet> | null = null;
-function getJWKS() {
-  if (!JWKS) {
+// Lazy-init: fetch JWKS URI from discovery document (avoids hardcoding provider-specific paths)
+let JWKSPromise: Promise<ReturnType<typeof createRemoteJWKSet>> | null = null;
+
+function getJWKS(): Promise<ReturnType<typeof createRemoteJWKSet>> {
+  if (!JWKSPromise) {
     const issuer = process.env.OIDC_ISSUER;
-    if (!issuer) throw new Error("OIDC_ISSUER env var required when AUTH_MODE=jwt");
-    JWKS = createRemoteJWKSet(new URL(`${issuer.replace(/\/$/, "")}/.well-known/jwks.json`));
+    if (!issuer) return Promise.reject(new Error("OIDC_ISSUER required when AUTH_MODE=jwt"));
+
+    const discoveryUrl = `${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
+    JWKSPromise = fetch(discoveryUrl)
+      .then((r) => r.json())
+      .then((cfg: { jwks_uri: string }) => createRemoteJWKSet(new URL(cfg.jwks_uri)))
+      .catch((e) => {
+        JWKSPromise = null; // reset so next request retries
+        throw e;
+      });
   }
-  return JWKS;
+  return JWKSPromise;
 }
 
 async function resolveFromJwt(headers: Headers): Promise<string | null> {
   const auth = headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const token = auth.slice(7);
-  const { payload } = await jwtVerify(token, getJWKS(), {
-    issuer: process.env.OIDC_ISSUER,
-  });
+  const jwks = await getJWKS();
+  const { payload } = await jwtVerify(token, jwks);
   return (payload.sub as string) ?? null;
 }
 

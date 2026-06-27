@@ -54,6 +54,24 @@ export const api = {
       matchedFindingCount: number;
       totalFindingCount: number;
     }>(`/api/sales/${id}`),
+  getOutcome: (saleId: string) =>
+    request<{
+      outcome: {
+        attended: boolean;
+        outcome: "good" | "meh" | "waste";
+        notes: string | null;
+      } | null;
+    }>(`/api/sales/${saleId}/outcome`),
+  recordOutcome: (
+    saleId: string,
+    attended: boolean,
+    outcome: "good" | "meh" | "waste",
+    notes?: string,
+  ) =>
+    request<{ ok: boolean }>(`/api/sales/${saleId}/outcome`, {
+      method: "POST",
+      body: JSON.stringify({ attended, outcome, notes }),
+    }),
   getHunts: () => request<{ hunts: Hunt[] }>("/api/hunts"),
   createHunt: (name: string, keywords: string[]) =>
     request<{ hunt: Hunt }>("/api/hunts", {

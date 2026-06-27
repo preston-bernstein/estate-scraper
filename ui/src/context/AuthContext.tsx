@@ -29,10 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    mgr.getUser().then((u) => {
-      setUser(u);
-      setIsLoading(false);
-    });
+    mgr.getUser()
+      .then((u) => setUser(u))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
 
     const onLoaded = (u: User) => setUser(u);
     const onUnloaded = () => setUser(null);

@@ -14,6 +14,15 @@ export const sales = sqliteTable("sales", {
   lon: real("lon").notNull(),
   distanceMiles: real("distance_miles").notNull(),
   scrapedAt: text("scraped_at").notNull(),
+  // Phase tracking
+  imageCount: integer("image_count"),
+  imagesAnalyzed: integer("images_analyzed"),
+  analysisPhase: text("analysis_phase"), // "FULL" | "TAIL_PROBE" | "EARLY_STOP"
+  // Oracle escalation result
+  oracleScore: real("oracle_score"),
+  oracleVerdict: text("oracle_verdict"),
+  oracleShouldAttend: integer("oracle_should_attend", { mode: "boolean" }),
+  oracleTopItems: text("oracle_top_items"), // JSON array of strings
 });
 
 export const findings = sqliteTable("findings", {
@@ -24,8 +33,25 @@ export const findings = sqliteTable("findings", {
   imageUrl: text("image_url").notNull(),
   description: text("description").notNull(),
   scrapedAt: text("scraped_at").notNull(),
+  // Instrumentation
+  imagePositionPct: real("image_position_pct"),
+  confidence: text("confidence"), // "high" | "medium" | "low"
 }, (t) => ({
   idxSaleId: index("idx_findings_sale_id").on(t.saleId),
+}));
+
+export const saleOutcomes = sqliteTable("sale_outcomes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  saleId: text("sale_id")
+    .notNull()
+    .references(() => sales.saleId),
+  ownerSub: text("owner_sub").notNull(),
+  attended: integer("attended", { mode: "boolean" }).notNull(),
+  outcome: text("outcome").notNull(), // "good" | "meh" | "waste"
+  notes: text("notes"),
+  recordedAt: text("recorded_at").notNull(),
+}, (t) => ({
+  uniqSaleOutcomeOwner: unique("uniq_sale_outcomes_sale_owner").on(t.saleId, t.ownerSub),
 }));
 
 export const hunts = sqliteTable("hunts", {

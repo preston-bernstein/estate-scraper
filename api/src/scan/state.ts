@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { SCAN_STATE_PATH } from "../lib/constants.js";
+import { SCAN_STATE_PATH } from "../lib/scraping.js";
 
 export type ScanPhase = "idle" | "scraping" | "analyzing" | "done";
 

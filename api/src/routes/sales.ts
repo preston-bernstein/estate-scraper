@@ -4,9 +4,11 @@ import { readScanState } from "../scan/state.js";
 import type { AppEnv } from "../types/env.js";
 import {
   getLastScannedAt,
+  getOutcome,
   getSaleDetail,
   listPastSales,
   listUpcomingSales,
+  recordOutcome,
   searchFindings,
 } from "../services/sales.js";
 
@@ -33,6 +35,29 @@ salesRoutes.get("/:id", async (c) => {
   }
 
   return c.json(detail);
+});
+
+salesRoutes.get("/:id/outcome", async (c) => {
+  const ownerSub = c.get("userSub");
+  const outcome = await getOutcome(c.req.param("id"), ownerSub);
+  return c.json({ outcome });
+});
+
+salesRoutes.post("/:id/outcome", async (c) => {
+  const ownerSub = c.get("userSub");
+  const saleId = c.req.param("id");
+  const body = await c.req.json<{
+    attended: boolean;
+    outcome: "good" | "meh" | "waste";
+    notes?: string;
+  }>();
+
+  if (!["good", "meh", "waste"].includes(body.outcome)) {
+    return c.json({ error: "outcome must be good | meh | waste" }, 400);
+  }
+
+  await recordOutcome(saleId, ownerSub, body.attended, body.outcome, body.notes ?? null);
+  return c.json({ ok: true });
 });
 
 export const findingsRoutes = new Hono<AppEnv>();

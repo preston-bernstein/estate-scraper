@@ -91,24 +91,29 @@ describe("hasFindings", () => {
       expect(hasFindings("The photo shows what appears to be a vintage armchair.")).toBe(false);
     });
 
-    it("rejects responses over 1000 characters regardless of content", () => {
+    it("rejects responses over 1400 characters regardless of content", () => {
       // Guard against truly verbose paragraph responses even when they contain item names.
-      // 1000 chars allows ~10 items at ~80 chars each (color+material+era+condition).
-      const longResponse = "a".repeat(1001);
-      expect(longResponse.length).toBeGreaterThan(1000);
+      // 1400 chars allows ~15 items at ~90 chars each (color+material+era+condition + confidence tag).
+      const longResponse = "a".repeat(1401);
+      expect(longResponse.length).toBeGreaterThan(1400);
       expect(hasFindings(longResponse)).toBe(false);
     });
 
-    it("accepts enriched descriptions up to 1000 characters", () => {
-      // Multi-item list with color + material + era + condition attributes
+    it("accepts enriched descriptions with confidence tags up to 1400 characters", () => {
+      // Multi-item list with color + material + era + condition + confidence tag
       const enriched = [
-        "brown leather Chesterfield sofa, good condition",
-        "walnut mid-century credenza, veneer bubbling on top",
-        "Stickley oak armchair, Arts & Crafts, label visible",
-        "mahogany Victorian dresser with brass bail pulls",
-        "grandfather clock with ornate carved case",
+        "brown leather Chesterfield sofa, good condition [high]",
+        "walnut mid-century credenza, veneer bubbling on top [medium]",
+        "Stickley oak armchair, Arts & Crafts, label visible [high]",
+        "mahogany Victorian dresser with brass bail pulls [medium]",
+        "grandfather clock with ornate carved case [high]",
+        "Atari 2600 console with cartridges [high]",
+        "velvet Elvis painting [medium]",
+        "ceramic rooster lamp [low]",
+        "paint-by-number seascape [medium]",
+        "Pioneer reel-to-reel tape player [high]",
       ].join("\n");
-      expect(enriched.length).toBeLessThanOrEqual(1000);
+      expect(enriched.length).toBeLessThanOrEqual(1400);
       expect(hasFindings(enriched)).toBe(true);
     });
 
@@ -134,6 +139,36 @@ describe("hasFindings", () => {
       expect(
         hasFindings("Furniture: 0\nArt: NONE\nJewelry: NONE VISIBLE"),
       ).toBe(false);
+    });
+  });
+
+  describe("confidence tags (Phase 3)", () => {
+    it("accepts items with [high] confidence tag", () => {
+      expect(hasFindings("Stickley armchair [high]")).toBe(true);
+    });
+
+    it("accepts items with [medium] confidence tag", () => {
+      expect(hasFindings("brown leather Chesterfield sofa [medium]")).toBe(true);
+    });
+
+    it("accepts items with [low] confidence tag", () => {
+      expect(hasFindings("velvet painting [low]")).toBe(true);
+    });
+
+    it("accepts multi-item list with mixed confidence tags", () => {
+      expect(
+        hasFindings(
+          "Stickley armchair [high]\nAtari 2600 console [high]\nceramic rooster lamp [medium]",
+        ),
+      ).toBe(true);
+    });
+
+    it("still rejects NOTHING even with confidence tags present in other context", () => {
+      expect(hasFindings("NOTHING")).toBe(false);
+    });
+
+    it("accepts items where confidence tag uses uppercase", () => {
+      expect(hasFindings("grandfather clock [HIGH]")).toBe(true);
     });
   });
 });

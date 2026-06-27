@@ -1,37 +1,6 @@
-export const BASE_URL = "https://www.estatesales.net";
-export const IMG_CDN = "picturescdn.estatesales.net";
-
-export const HOME = {
-  address: process.env.HOME_ADDRESS ?? "YOUR_HOME_ADDRESS",
-  city: process.env.HOME_CITY ?? "Decatur",
-  state: process.env.HOME_STATE ?? "GA",
-  zip: process.env.HOME_ZIP ?? "YOUR_HOME_ZIP",
-  lat: Number(process.env.HOME_LAT ?? "0.0"),
-  lon: Number(process.env.HOME_LON ?? "0.0"),
-};
-
-export const DEFAULT_RADIUS_MILES = 30;
-
 export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://YOUR_DESKTOP_IP:11434";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5vl:7b-q8_0";
 export const VISION_WORKERS = 6;
-
-export const FETCH_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-  Referer: `${BASE_URL}/`,
-} as const;
-
-export const SKIP_IMAGE_PATTERNS = [
-  "logo",
-  "icon",
-  "orglogo",
-  "avatar",
-  "pixel",
-  "blank",
-  "badge",
-];
 
 // System role — establishes context so the model doesn't need to infer it from the user message.
 // Separating system/user is the correct usage of instruction-tuned models (Qwen, Llama, etc.)
@@ -70,6 +39,7 @@ export const VISION_USER_PROMPT =
   "(e.g. Atari 2600 console, Pioneer reel-to-reel, Zenith console TV, Commodore 64). " +
   "Include brand or maker's mark only if a label is clearly readable. " +
   "Include condition only if damage or wear is clearly visible. " +
+  "End each line with [high], [medium], or [low] to indicate how clearly visible and confidently identifiable the item is. " +
   "If nothing notable: NOTHING";
 
 // JSON schema passed to Ollama's `format` field — constrains output to structured data.
@@ -98,11 +68,3 @@ export const VISION_SCHEMA = {
 // Legacy flat prompt kept for the eval harness prompt-comparison runs (baseline / generate endpoint).
 export const VISION_PROMPT_LEGACY =
   "List the valuable items you see in this estate sale photo. Be specific: for upholstered seating include color, material, and style (e.g. 'navy velvet tufted sectional', 'brown leather Chesterfield sofa', 'cream linen loveseat'). For other items use the specific name (e.g. 'Stickley armchair', 'Tiffany lamp', 'grandfather clock'). Short list only — one item per line. If nothing valuable is visible, respond with exactly one word: NOTHING.";
-
-export const NOMINATIM_USER_AGENT =
-  process.env.NOMINATIM_USER_AGENT ?? "estate-scraper/1.0 (home-lab)";
-
-export const SCAN_STATE_PATH =
-  process.env.SCAN_STATE_PATH ?? "./data/scan-state.json";
-
-export const METRO_LISTING_URL = `${BASE_URL}/GA/Atlanta`;

@@ -1,4 +1,4 @@
-import { HOME, NOMINATIM_USER_AGENT } from "./constants.js";
+import { HOME, NOMINATIM_USER_AGENT } from "./scraping.js";
 
 const EARTH_RADIUS_MILES = 3958.8;
 

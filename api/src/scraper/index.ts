@@ -1,4 +1,4 @@
-import { METRO_LISTING_URL } from "../lib/constants.js";
+import { METRO_LISTING_URL } from "../lib/scraping.js";
 import { distanceFromHome, geocodeAddress } from "../lib/geo.js";
 import { fetchText, politeDelay } from "../lib/http.js";
 import { parseListingLinks, parseSaleDetail, type SaleDetail } from "./parse.js";

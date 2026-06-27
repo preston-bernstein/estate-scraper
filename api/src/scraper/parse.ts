@@ -1,4 +1,4 @@
-import { SKIP_IMAGE_PATTERNS } from "../lib/constants.js";
+import { SKIP_IMAGE_PATTERNS } from "../lib/scraping.js";
 
 export type ListingRef = {
   saleId: string;

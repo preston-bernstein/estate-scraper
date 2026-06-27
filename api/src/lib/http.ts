@@ -1,4 +1,4 @@
-import { FETCH_HEADERS } from "./constants.js";
+import { FETCH_HEADERS } from "./scraping.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

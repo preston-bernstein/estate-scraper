@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { todayIsoDate } from "../lib/date.js";
 import { db } from "../db/index.js";
-import { findings, hunts, planItems, sales, userSettings } from "../db/schema.js";
+import { findings, hunts, planItems, saleOutcomes, sales, userSettings } from "../db/schema.js";
 import {
   aggregateHuntMatchCounts,
   findingMatchesKeywords,
@@ -10,9 +11,6 @@ import {
 export type FindingRow = typeof findings.$inferSelect;
 export type SaleRow = typeof sales.$inferSelect;
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export async function getUserHunts(ownerSub: string) {
   return db.select().from(hunts).where(eq(hunts.ownerSub, ownerSub));
@@ -334,4 +332,32 @@ export async function getPlanSaleIds(ownerSub: string) {
     .orderBy(planItems.sortOrder);
 
   return items.map((item) => item.saleId);
+}
+
+export async function getOutcome(saleId: string, ownerSub: string) {
+  const [row] = await db
+    .select()
+    .from(saleOutcomes)
+    .where(and(eq(saleOutcomes.saleId, saleId), eq(saleOutcomes.ownerSub, ownerSub)));
+  return row ?? null;
+}
+
+export async function recordOutcome(
+  saleId: string,
+  ownerSub: string,
+  attended: boolean,
+  outcome: "good" | "meh" | "waste",
+  notes: string | null,
+): Promise<void> {
+  await db
+    .insert(saleOutcomes)
+    .values({
+      saleId,
+      ownerSub,
+      attended,
+      outcome,
+      notes,
+      recordedAt: new Date().toISOString(),
+    })
+    .onConflictDoNothing();
 }

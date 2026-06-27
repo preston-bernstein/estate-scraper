@@ -14,7 +14,7 @@
     "import": "npm run import -w api",
     "test": "npm run test -w api",
     "test:watch": "npm run test:watch -w api",
-    "eval": "tsx eval/index.ts"
+    "eval": "npm run eval -w api"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { OLLAMA_HOST } from "../lib/constants.js";
+import { OLLAMA_HOST } from "../lib/vision.js";
 import type { AppEnv } from "../types/env.js";
 import { getRecentFindingsContext } from "../services/discover.js";
 

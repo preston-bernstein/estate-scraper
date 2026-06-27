@@ -1,4 +1,5 @@
 import { and, gte, inArray, or, sql } from "drizzle-orm";
+import { todayIsoDate } from "../lib/date.js";
 import { db } from "../db/index.js";
 import { findings, sales } from "../db/schema.js";
 
@@ -49,19 +50,22 @@ function tagFinding(desc: string): DiscoverFinding["tag"] {
   return "furniture";
 }
 
-function scoreFinding(desc: string): number {
+const CONFIDENCE_MULTIPLIER: Record<string, number> = {
+  high: 1.3,
+  medium: 1.0,
+  low: 0.6,
+};
+
+function scoreFinding(desc: string, confidence: string | null): number {
   let score = 1;
   if (BRAND.test(desc)) score += 4;
   if (ERA.test(desc)) score += 2;
   if (ELECTRONICS.test(desc)) score += 3;
   if (KITSCH.test(desc)) score += 3;
   if (desc.length > 50) score += 1;
-  return score;
+  return score * (CONFIDENCE_MULTIPLIER[confidence ?? ""] ?? 1.0);
 }
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export async function getDiscoverData(): Promise<{
   rankedSales: RankedSale[];
@@ -100,7 +104,7 @@ export async function getDiscoverData(): Promise<{
       id: f.id,
       imageUrl: f.imageUrl,
       description: f.description,
-      score: scoreFinding(f.description),
+      score: scoreFinding(f.description, f.confidence),
       tag: tagFinding(f.description),
     }));
 
@@ -139,7 +143,7 @@ export async function getDiscoverData(): Promise<{
   for (const sale of upcomingSales) {
     const saleFindings = findingsBySale.get(sale.saleId) ?? [];
     for (const f of saleFindings) {
-      const score = scoreFinding(f.description);
+      const score = scoreFinding(f.description, f.confidence);
       if (score >= 4) {
         standouts.push({
           id: f.id,
@@ -223,7 +227,7 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
         id: f.id,
         imageUrl: f.imageUrl,
         description: f.description,
-        score: scoreFinding(f.description),
+        score: scoreFinding(f.description, f.confidence),
         tag: tagFinding(f.description),
       }))
       .sort((a, b) => b.score - a.score);
@@ -286,7 +290,7 @@ export async function getRecentFindingsContext(): Promise<string> {
     const saleFindings = findingsBySale.get(sale.saleId) ?? [];
     if (saleFindings.length === 0) continue;
     const top = [...saleFindings]
-      .sort((a, b) => scoreFinding(b.description) - scoreFinding(a.description))
+      .sort((a, b) => scoreFinding(b.description, b.confidence) - scoreFinding(a.description, a.confidence))
       .slice(0, 15);
     lines.push(`\nSale: "${sale.title}" (${sale.saleId}) — ${sale.distanceMiles.toFixed(1)}mi, ${sale.city} ${sale.state}`);
     lines.push(`Dates: ${sale.startDate} to ${sale.endDate}`);

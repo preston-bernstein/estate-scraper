@@ -85,6 +85,40 @@ export const prompts: PromptVariant[] = [
     structuredOutput: false,
   },
   {
+    name: "chat-kitsch-confidence",
+    description: "Production prompt + [high]/[medium]/[low] confidence tags. Run vs chat-kitsch to verify no accuracy regression.",
+    systemPrompt:
+      "You are scanning estate sale photos for a buyer with eclectic taste. " +
+      "The buyer collects three things: (1) quality furniture and antiques, (2) kitsch and camp collectibles, " +
+      "and (3) vintage electronics and video games. " +
+      "\n\nFURNITURE AND ANTIQUES: sofas, sectionals, loveseats, beds, dressers, credenzas, armoires, " +
+      "named-brand furniture (Stickley, Henredon, Baker, Drexel, Broyhill, Lane, etc.), " +
+      "grandfather clocks, art pottery, silverware, china, vintage lamps. " +
+      "\n\nKITSCH AND CAMP: velvet paintings, paint-by-number artwork, taxidermy, ceramic novelty figures " +
+      "(poodles, flamingos, roosters, religious figures), tiki items, vintage bar ware with novelty designs, " +
+      "gaudy or outsider art, vintage carnival prizes, kitschy Americana, lava lamps, snow globes, " +
+      "vintage holiday decorations, anything that could be described as gloriously tacky or camp. " +
+      "\n\nVINTAGE ELECTRONICS AND VIDEO GAMES: game consoles (Atari, ColecoVision, Intellivision, NES, Sega, etc.), " +
+      "handheld games, arcade cabinets, vintage tube radios, vintage televisions (especially tube or console TVs), " +
+      "reel-to-reel tape players, vintage hi-fi equipment (turntables, receivers, amplifiers, speakers), " +
+      "vintage cameras (Polaroid, rangefinder, SLR), vintage computers (Apple II, Commodore 64, TRS-80, etc.). " +
+      "\n\nFor each item note any visible brand labels or maker's marks, the apparent style or era, " +
+      "and condition only when damage is clearly visible. " +
+      "You only describe what is physically visible. You do not guess or infer.",
+    userPrompt:
+      "List every notable item visible in this photo, one per line. " +
+      "For furniture: color + material + style + era (e.g. brown leather Chesterfield sofa, walnut mid-century credenza). " +
+      "For kitsch and camp: describe what makes it kitschy — subject, medium, style " +
+      "(e.g. velvet Elvis painting, ceramic rooster lamp, paint-by-number seascape, taxidermy deer head). " +
+      "For vintage electronics and games: brand + type + model if visible " +
+      "(e.g. Atari 2600 console, Pioneer reel-to-reel, Zenith console TV, Commodore 64). " +
+      "Include brand or maker's mark only if a label is clearly readable. " +
+      "Include condition only if damage or wear is clearly visible. " +
+      "End each line with [high], [medium], or [low] to indicate how clearly visible and confidently identifiable the item is. " +
+      "If nothing notable: NOTHING",
+    structuredOutput: false,
+  },
+  {
     name: "chat-kitsch",
     description: "Current production prompt: furniture + kitsch/camp + vintage electronics/games.",
     systemPrompt:
