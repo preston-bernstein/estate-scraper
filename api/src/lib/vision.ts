@@ -1,6 +1,38 @@
-export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://YOUR_DESKTOP_IP:11434";
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5vl:7b-q8_0";
-export const VISION_WORKERS = 6;
+export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://localhost:11436";
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
+export const VISION_WORKERS = 2;
+export const PREFILTER_WORKERS = 4;
+export const PHASH_HAMMING_THRESHOLD = 10;
+
+// ── Gate prompt: system + user split ─────────────────────────────────────────
+// Research: long text in the user message competes with image tokens for VLM attention
+// (visual attention degrades as text-to-token ratio rises). Keeping criteria in the system
+// message leaves the user turn as image + minimal question → maximum visual focus.
+// /no_think tells Qwen3 models to answer directly without chain-of-thought preamble.
+export const LOCAL_GATE_SYSTEM =
+  "/no_think\n" +
+  "You route estate sale photos. Reply with exactly one word: PASS or SKIP.\n\n" +
+  "SKIP — no resale value:\n" +
+  "exterior, driveway, yard, empty room, bare wall/floor/ceiling, sale sign, price board, " +
+  "HVAC/electrical panel/water heater, vehicle, person/pet, " +
+  "cardboard boxes only, plastic storage bins/organizers, " +
+  "flat-pack or particle-board furniture with no quality markers, " +
+  "generic mass-market clothing with no brand or vintage signals, " +
+  "cables/chargers/USB hubs/phone cases as the only items\n\n" +
+  "PASS — may have resale value (uncertain → always PASS):\n" +
+  "any furniture (wood, upholstered, metal — any style), art (framed or unframed), " +
+  "electronics (vintage or modern), collectibles, jewelry, watches, " +
+  "clothing with visible brand or vintage character, tools, musical instruments, " +
+  "china/silver/crystal, lamps, clocks, books with readable titles, games, toys";
+
+// Minimal user-turn content — image is attached here; brief question keeps text tokens low
+// so the model's attention budget stays on the image rather than re-reading criteria.
+export const LOCAL_GATE_PROMPT = "PASS or SKIP?";
+
+// RunPod serverless endpoint for full vision analysis (replaces local Ollama when set)
+export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
+export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";
+export const RUNPOD_MODEL = process.env.RUNPOD_MODEL ?? "Qwen/Qwen3-VL-32B-Instruct";
 
 // System role — establishes context so the model doesn't need to infer it from the user message.
 // Separating system/user is the correct usage of instruction-tuned models (Qwen, Llama, etc.)
@@ -30,6 +62,7 @@ export const VISION_SYSTEM_PROMPT =
 
 // User turn — enriched format requesting brand/era/condition alongside color+material.
 // chat-plain scored 89% detection + 100% specificity in eval; structured output scored only 50%.
+// Confidence tags ([high]/[medium]/[low]) appended per line; plain-text outperforms JSON constraint.
 export const VISION_USER_PROMPT =
   "List every notable item visible in this photo, one per line. " +
   "For furniture: color + material + style + era (e.g. brown leather Chesterfield sofa, walnut mid-century credenza). " +
@@ -43,7 +76,6 @@ export const VISION_USER_PROMPT =
   "If nothing notable: NOTHING";
 
 // JSON schema passed to Ollama's `format` field — constrains output to structured data.
-// This replaces all hasFindings heuristics and free-text LIKE queries for the chat endpoint.
 export const VISION_SCHEMA = {
   type: "object",
   properties: {

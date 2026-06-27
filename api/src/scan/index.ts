@@ -18,6 +18,7 @@ type ScanOptions = {
   maxSales?: number;
   maxImages?: number;
   skipVision?: boolean;
+  dryRun?: boolean;
 };
 
 function parseArgs(argv: string[]): ScanOptions {
@@ -33,6 +34,8 @@ function parseArgs(argv: string[]): ScanOptions {
       options.radiusMiles = Number(argv[++index]);
     } else if (arg === "--skip-vision") {
       options.skipVision = true;
+    } else if (arg === "--dry-run") {
+      options.dryRun = true;
     }
   }
 
@@ -102,6 +105,7 @@ async function main() {
 
     for await (const event of processSalesStream(scrapedSales, {
       maxImages: args.maxImages,
+      dryRun: args.dryRun,
       skipUrls,
     })) {
       writer.pushEvent(event);
@@ -115,7 +119,9 @@ async function main() {
         console.log(
           `\n[${event.saleIdx + 1}/${event.totalSales}] ${event.title.slice(0, 60)}`,
         );
-        console.log(`  ${event.total} images…`);
+        const reduction = event.originalTotal - event.total;
+        const suffix = reduction > 0 ? ` (${event.originalTotal} → ${event.total} after dedup/prefilter)` : "";
+        console.log(`  ${event.total} images…${suffix}`);
       } else if (event.type === "finding") {
         totalFindings++;
         saleBuffer.push({

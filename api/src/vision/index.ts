@@ -1,6 +1,14 @@
+import sharp from "sharp";
 import {
+  LOCAL_GATE_PROMPT,
+  LOCAL_GATE_SYSTEM,
   OLLAMA_HOST,
   OLLAMA_MODEL,
+  PHASH_HAMMING_THRESHOLD,
+  PREFILTER_WORKERS,
+  RUNPOD_API_KEY,
+  RUNPOD_ENDPOINT_ID,
+  RUNPOD_MODEL,
   VISION_SYSTEM_PROMPT,
   VISION_USER_PROMPT,
   VISION_WORKERS,
@@ -30,6 +38,7 @@ export type VisionEvent =
       title: string;
       url: string;
       total: number;
+      originalTotal: number;
     }
   | {
       type: "progress";
@@ -88,7 +97,8 @@ type ImageResult = {
 
 type TaggedResult = ImageResult & { positionIndex: number };
 
-// Determines whether a response string contains real findings.
+// ─── Response parsing ─────────────────────────────────────────────────────────
+
 export function hasFindings(response: string): boolean {
   const trimmed = response.trim();
   if (!trimmed) return false;
@@ -96,6 +106,7 @@ export function hasFindings(response: string): boolean {
   const normalized = trimmed.toUpperCase();
   if (normalized === "NOTHING") return false;
 
+  // 1400 chars allows ~15 items at ~90 chars each (description + confidence tag).
   if (trimmed.length > 1400) return false;
   if (/^(The image|I can|This image|In this image|The photo)/i.test(trimmed)) return false;
 
@@ -110,14 +121,12 @@ export function hasFindings(response: string): boolean {
   return junk < lines.length;
 }
 
-// Parse [high]/[medium]/[low] tag from the end of a single item line.
 function extractLineConfidence(line: string): Confidence | null {
   const match = /\[(high|medium|low)\]\s*$/i.exec(line.trim());
   if (!match) return null;
   return match[1]!.toLowerCase() as Confidence;
 }
 
-// Highest confidence tag across all lines in a response.
 export function extractTopConfidence(response: string): Confidence | null {
   const order: Confidence[] = ["high", "medium", "low"];
   let best: Confidence | null = null;
@@ -131,7 +140,6 @@ export function extractTopConfidence(response: string): Confidence | null {
   return best;
 }
 
-// Remove [high]/[medium]/[low] tags for clean DB storage.
 export function stripConfidenceTags(response: string): string {
   return response
     .split(/\r?\n/)
@@ -140,7 +148,6 @@ export function stripConfidenceTags(response: string): string {
     .trim();
 }
 
-// Weighted score for a single response — used for phase accumulation.
 export function scoreResponse(response: string): number {
   if (!hasFindings(response)) return 0;
   const lines = response.trim().split(/\r?\n/).filter((l) => {
@@ -153,7 +160,6 @@ export function scoreResponse(response: string): number {
   }, 0);
 }
 
-// Random sample of k items from arr without replacement.
 function sampleK<T>(arr: T[], k: number): T[] {
   if (arr.length <= k) return [...arr];
   const copy = [...arr];
@@ -165,7 +171,106 @@ function sampleK<T>(arr: T[], k: number): T[] {
   return result;
 }
 
-async function runVision(imageBase64: string): Promise<string> {
+// ─── Stage 1: Perceptual hash deduplication ───────────────────────────────────
+
+function hammingDistance(a: bigint, b: bigint): number {
+  let xor = a ^ b;
+  let n = 0;
+  while (xor) {
+    n += Number(xor & 1n);
+    xor >>= 1n;
+  }
+  return n;
+}
+
+async function computeDHash(buffer: Buffer): Promise<bigint> {
+  // dHash: resize to 9×8 grayscale, compare adjacent columns per row → 64-bit fingerprint
+  const { data } = await sharp(buffer)
+    .resize(9, 8, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let hash = 0n;
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const left = data[row * 9 + col]!;
+      const right = data[row * 9 + col + 1]!;
+      hash = (hash << 1n) | (left < right ? 1n : 0n);
+    }
+  }
+  return hash;
+}
+
+// ─── Stage 1b: Image quality gate (blur + darkness, no model needed) ─────────
+
+async function passesQualityGate(buffer: Buffer): Promise<boolean> {
+  try {
+    const { data } = await sharp(buffer)
+      .resize(256, 256, { fit: "inside" })
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixels = data.length;
+
+    // Darkness: mean brightness below threshold → unusable
+    let sum = 0;
+    for (let i = 0; i < pixels; i++) sum += data[i]!;
+    const mean = sum / pixels;
+    if (mean < 20) return false;
+
+    // Blur: variance of pixel values — blurry images have low variance
+    let variance = 0;
+    for (let i = 0; i < pixels; i++) variance += (data[i]! - mean) ** 2;
+    variance /= pixels;
+    if (variance < 100) return false;
+
+    return true;
+  } catch {
+    return true; // fail open
+  }
+}
+
+// ─── Stage 2: Local gate (RunPod mode only) ───────────────────────────────────
+
+async function runLocalGate(imageBase64: string): Promise<boolean> {
+  // System message carries criteria (keeps text tokens out of the user turn so the
+  // model's attention budget stays on the image). User turn is image + minimal question.
+  // keep_alive keeps 30B model hot in VRAM across the full 6-hour batch window.
+  // num_predict:10 prevents over-generation; /no_think suppresses Qwen3 CoT preamble.
+  try {
+    const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [
+          { role: "system", content: LOCAL_GATE_SYSTEM },
+          { role: "user", content: LOCAL_GATE_PROMPT, images: [imageBase64] },
+        ],
+        stream: false,
+        keep_alive: "2h",
+        options: { temperature: 0, num_predict: 10 },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) return true; // fail open
+    const payload = (await response.json()) as { message?: { content?: string } };
+    const raw = (payload.message?.content ?? "").trim();
+    // Strip Qwen3 <think>...</think> blocks if /no_think didn't suppress them
+    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    // Use the LAST non-empty word — model sometimes prefixes a brief note
+    const words = stripped.split(/\s+/).filter(Boolean);
+    const decision = (words[words.length - 1] ?? "").toUpperCase();
+    return decision !== "SKIP";
+  } catch {
+    return true; // fail open
+  }
+}
+
+// ─── Stage 3: Full vision analysis ───────────────────────────────────────────
+
+async function runVisionOllama(imageBase64: string): Promise<string> {
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -181,9 +286,7 @@ async function runVision(imageBase64: string): Promise<string> {
     signal: AbortSignal.timeout(120_000),
   });
 
-  if (!response.ok) {
-    throw new Error(`Ollama HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
 
   const payload = (await response.json()) as { message?: { content?: string } };
   return (payload.message?.content ?? "")
@@ -193,14 +296,82 @@ async function runVision(imageBase64: string): Promise<string> {
     .trim();
 }
 
-async function processImage(url: string, saleId: string): Promise<ImageResult> {
+async function runVisionRunpod(imageBase64: string): Promise<string> {
+  const url = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/openai/v1/chat/completions`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${RUNPOD_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: RUNPOD_MODEL,
+      messages: [
+        { role: "system", content: VISION_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+            { type: "text", text: VISION_USER_PROMPT },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 512,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!response.ok) throw new Error(`RunPod HTTP ${response.status}`);
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return (payload.choices?.[0]?.message?.content ?? "")
+    .split("\n")
+    .filter((line) => line.trim().toUpperCase() !== "NOTHING")
+    .join("\n")
+    .trim();
+}
+
+function runVision(imageBase64: string): Promise<string> {
+  return RUNPOD_ENDPOINT_ID ? runVisionRunpod(imageBase64) : runVisionOllama(imageBase64);
+}
+
+// ─── Per-image processing (quality gate → local gate → full vision) ───────────
+
+async function processImage(
+  url: string,
+  saleId: string,
+  preloadedBuffer?: Buffer,
+): Promise<ImageResult> {
   const started = performance.now();
   const result: ImageResult = { url, saleId, response: "", error: "", durationS: 0 };
 
   try {
-    const buffer = await fetchBuffer(url);
+    const buffer = preloadedBuffer ?? (await fetchBuffer(url));
     if (!buffer) throw new Error("image download failed");
-    result.response = await runVision(buffer.toString("base64"));
+
+    if (!(await passesQualityGate(buffer))) {
+      // Quality gate filtered — return empty response (not an error)
+      result.durationS = Math.round((performance.now() - started) / 10) / 100;
+      return result;
+    }
+
+    const resized = await sharp(buffer)
+      .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    const base64 = resized.toString("base64");
+
+    // Local gate runs only in RunPod mode — avoids spending VRAM on a second local model
+    // when the full-vision backend is also local Ollama (no benefit to double-gating).
+    if (RUNPOD_ENDPOINT_ID && !(await runLocalGate(base64))) {
+      result.durationS = Math.round((performance.now() - started) / 10) / 100;
+      return result;
+    }
+
+    result.response = await runVision(base64);
   } catch (error) {
     result.error = error instanceof Error ? error.message.slice(0, 120) : "unknown error";
   }
@@ -208,6 +379,8 @@ async function processImage(url: string, saleId: string): Promise<ImageResult> {
   result.durationS = Math.round((performance.now() - started) / 10) / 100;
   return result;
 }
+
+// ─── Pool concurrency helper ──────────────────────────────────────────────────
 
 async function mapPool<T, R>(
   items: T[],
@@ -235,16 +408,22 @@ export async function checkModelAvailable(
   model = OLLAMA_MODEL,
   host = OLLAMA_HOST,
 ): Promise<boolean> {
+  if (RUNPOD_ENDPOINT_ID) return true;
+
   try {
     const response = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) return false;
     const payload = (await response.json()) as { models?: Array<{ name: string }> };
-    const names = payload.models?.map((m) => m.name) ?? [];
-    return names.some((n) => n === model || n.startsWith(model.split(":")[0]!));
+    const names = payload.models?.map((entry) => entry.name) ?? [];
+    return names.some(
+      (name) => name === model || name.startsWith(model.split(":")[0]!),
+    );
   } catch {
     return false;
   }
 }
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 const MAX_PER_DESCRIPTION = 5;
 
@@ -254,17 +433,51 @@ export async function* processSalesStream(
     maxImages?: number;
     skipUrls?: Set<string>;
     workers?: number;
+    dryRun?: boolean;
   } = {},
 ): AsyncGenerator<VisionEvent> {
   const skipUrls = options.skipUrls ?? new Set<string>();
   const workers = options.workers ?? VISION_WORKERS;
+  const dryRun = options.dryRun ?? false;
   const totalSales = sales.length;
 
   for (const [saleIdx, sale] of sales.entries()) {
-    let imageUrls = sale.imageUrls.filter((url) => !skipUrls.has(url));
-    if (options.maxImages) imageUrls = imageUrls.slice(0, options.maxImages);
+    let candidateUrls = sale.imageUrls.filter((url) => !skipUrls.has(url));
+    if (options.maxImages) candidateUrls = candidateUrls.slice(0, options.maxImages);
+    if (candidateUrls.length === 0) continue;
 
-    const total = imageUrls.length;
+    const originalTotal = candidateUrls.length;
+
+    // ── Stage 1: Download all candidates + pHash dedup ─────────────────────
+    // All images downloaded upfront so pHash can compare across the full set;
+    // adaptive sampling phases reuse the cached buffers without re-downloading.
+    const seenHashes: bigint[] = [];
+    const deduped = await mapPool(candidateUrls, PREFILTER_WORKERS, async (url) => {
+      const buffer = await fetchBuffer(url);
+      if (!buffer) return null;
+      try {
+        const hash = await computeDHash(buffer);
+        if (seenHashes.some((h) => hammingDistance(hash, h) <= PHASH_HAMMING_THRESHOLD)) {
+          return null; // near-duplicate
+        }
+        seenHashes.push(hash);
+      } catch {
+        // pHash failed — keep the image
+      }
+      return { url, buffer };
+    });
+
+    const uniqueImages = deduped.filter(
+      (x): x is { url: string; buffer: Buffer } => x !== null,
+    );
+    const total = uniqueImages.length;
+
+    const dupesRemoved = originalTotal - total;
+    console.log(
+      `  [dedup]     ${originalTotal} → ${total} unique` +
+        (dupesRemoved > 0 ? ` (${dupesRemoved} near-dupes removed)` : ""),
+    );
+
     if (total === 0) continue;
 
     yield {
@@ -275,32 +488,53 @@ export async function* processSalesStream(
       title: sale.title,
       url: sale.url,
       total,
+      originalTotal,
     };
 
-    // ── Phase 1: lead sample ──────────────────────────────────────────────
+    if (dryRun) {
+      console.log(`  [dry-run]   would analyze ${total} images`);
+      yield {
+        type: "sale_done",
+        saleId: sale.saleId,
+        title: sale.title,
+        url: sale.url,
+        imagesProcessed: 0,
+        imagesWithFindings: 0,
+        errors: 0,
+        analysisPhase: "FULL",
+        totalImages: total,
+        saleScore: 0,
+      };
+      continue;
+    }
+
+    // ── Stage 2: Adaptive sampling on the deduped set ─────────────────────
+    // Lead sample → score → decide: full pass, tail probe, or early stop.
+    // Quality gate + local gate run inside processImage per analyzed image.
     const leadCount = Math.max(1, Math.ceil(total * LEAD_SAMPLE_PCT));
-    const leadUrls = imageUrls.slice(0, leadCount);
-    const leadResults = await mapPool(leadUrls, workers, (url) =>
-      processImage(url, sale.saleId),
-    );
+    const leadImages = uniqueImages.slice(0, leadCount);
 
     let saleScore = 0;
     let errors = 0;
-    const allTagged: TaggedResult[] = leadResults.map((r, i) => {
+    const allTagged: TaggedResult[] = [];
+
+    const leadResults = await mapPool(leadImages, workers, (img) =>
+      processImage(img.url, sale.saleId, img.buffer),
+    );
+    for (const [i, r] of leadResults.entries()) {
       if (r.error) errors++;
       else saleScore += scoreResponse(r.response);
-      return { ...r, positionIndex: i };
-    });
+      allTagged.push({ ...r, positionIndex: i });
+    }
 
     let analysisPhase: AnalysisPhase = "FULL";
 
-    // ── Phase routing ─────────────────────────────────────────────────────
     if (leadCount >= total || saleScore >= HIGH_SCORE_THRESHOLD) {
-      // Strong signal or already seen everything — process remaining
+      // Strong signal or lead already covered everything — process remaining
       if (leadCount < total) {
-        const remainUrls = imageUrls.slice(leadCount);
-        const remainResults = await mapPool(remainUrls, workers, (url) =>
-          processImage(url, sale.saleId),
+        const remainImages = uniqueImages.slice(leadCount);
+        const remainResults = await mapPool(remainImages, workers, (img) =>
+          processImage(img.url, sale.saleId, img.buffer),
         );
         for (const [i, r] of remainResults.entries()) {
           if (r.error) errors++;
@@ -310,12 +544,12 @@ export async function* processSalesStream(
       }
       analysisPhase = "FULL";
     } else if (saleScore < SWITCH_SCORE_THRESHOLD) {
-      // Weak lead — tail probe
+      // Weak lead — probe the tail before committing to full analysis
       const tailStart = Math.max(Math.floor(total * TAIL_SAMPLE_PCT_START), leadCount);
-      const tailPool = imageUrls.slice(tailStart);
+      const tailPool = uniqueImages.slice(tailStart);
 
       if (tailPool.length === 0) {
-        // Sale is small enough that lead covered everything meaningful — skip
+        // Small sale; lead covered everything meaningful
         analysisPhase = "EARLY_STOP";
         const imagesAnalyzed = leadCount;
         yield {
@@ -342,13 +576,13 @@ export async function* processSalesStream(
       }
 
       const tailSample = sampleK(tailPool, TAIL_SAMPLE_K);
-      const tailResults = await mapPool(tailSample, workers, (url) =>
-        processImage(url, sale.saleId),
+      const tailResults = await mapPool(tailSample, workers, (img) =>
+        processImage(img.url, sale.saleId, img.buffer),
       );
 
       let tailScore = 0;
       const tailTagged: TaggedResult[] = tailResults.map((r, i) => {
-        const posIdx = imageUrls.indexOf(tailSample[i]!);
+        const posIdx = uniqueImages.findIndex((img) => img.url === tailSample[i]!.url);
         if (r.error) errors++;
         else tailScore += scoreResponse(r.response);
         return { ...r, positionIndex: posIdx >= 0 ? posIdx : tailStart + i };
@@ -381,32 +615,33 @@ export async function* processSalesStream(
         continue;
       }
 
-      // Tail found something — analyze everything we haven't seen yet
+      // Tail found something — fill in the middle and any un-sampled tail images
       analysisPhase = "TAIL_PROBE";
-      const probedSet = new Set(tailSample);
-      const unprobed = imageUrls.slice(leadCount).filter((u) => !probedSet.has(u));
+      const probedUrls = new Set(tailSample.map((img) => img.url));
+      const unprobed = uniqueImages
+        .slice(leadCount)
+        .filter((img) => !probedUrls.has(img.url));
 
       allTagged.push(...tailTagged);
+      saleScore += tailScore;
 
       if (unprobed.length > 0) {
-        const moreResults = await mapPool(unprobed, workers, (url) =>
-          processImage(url, sale.saleId),
+        const moreResults = await mapPool(unprobed, workers, (img) =>
+          processImage(img.url, sale.saleId, img.buffer),
         );
-        for (const [i, r] of moreResults.entries()) {
-          const posIdx = imageUrls.indexOf(unprobed[i]!);
+        for (const r of moreResults) {
+          const posIdx = uniqueImages.findIndex((img) => img.url === r.url);
           if (r.error) errors++;
           else saleScore += scoreResponse(r.response);
-          allTagged.push({ ...r, positionIndex: posIdx >= 0 ? posIdx : leadCount + i });
+          allTagged.push({ ...r, positionIndex: posIdx >= 0 ? posIdx : leadCount });
         }
       }
-
-      saleScore += tailScore;
     } else {
-      // Intermediate zone — process everything, oracle will escalate if needed
+      // Intermediate zone — full analysis, oracle escalates if uncertain
       if (leadCount < total) {
-        const remainUrls = imageUrls.slice(leadCount);
-        const remainResults = await mapPool(remainUrls, workers, (url) =>
-          processImage(url, sale.saleId),
+        const remainImages = uniqueImages.slice(leadCount);
+        const remainResults = await mapPool(remainImages, workers, (img) =>
+          processImage(img.url, sale.saleId, img.buffer),
         );
         for (const [i, r] of remainResults.entries()) {
           if (r.error) errors++;
@@ -417,10 +652,9 @@ export async function* processSalesStream(
       analysisPhase = "FULL";
     }
 
-    // Sort by original image position for consistent ordering
     allTagged.sort((a, b) => a.positionIndex - b.positionIndex);
 
-    // ── Emit findings ─────────────────────────────────────────────────────
+    // ── Stage 3: Emit findings ──────────────────────────────────────────────
     let found = 0;
     const descCounts = new Map<string, number>();
 
@@ -458,13 +692,8 @@ export async function* processSalesStream(
       };
     }
 
-    // ── Oracle escalation for uncertain zone ──────────────────────────────
-    if (
-      ORACLE_API_BASE &&
-      found > 0 &&
-      saleScore >= ORACLE_SCORE_MIN &&
-      saleScore < ORACLE_SCORE_MAX
-    ) {
+    // ── Oracle escalation for uncertain-zone sales ─────────────────────────
+    if (ORACLE_API_BASE && found > 0 && saleScore >= ORACLE_SCORE_MIN && saleScore < ORACLE_SCORE_MAX) {
       const topImageUrls = allTagged
         .filter((r) => !r.error && hasFindings(r.response))
         .slice(0, 6)
