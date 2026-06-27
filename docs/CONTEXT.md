@@ -25,7 +25,7 @@ The geographic search boundary for a Scan, centered on the configured home addre
 _Avoid_: area, region, distance
 
 **Home**:
-The fixed reference address used to calculate distance to each Sale and to define the Radius. Currently YOUR_HOME_ADDRESS, Decatur GA YOUR_HOME_ZIP.
+The fixed reference address used to calculate distance to each Sale and to define the Radius. Set via HOME_* env vars (see api/.env.example).
 _Avoid_: location, origin, base
 
 **Plan**:

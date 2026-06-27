@@ -1,13 +1,19 @@
 export const BASE_URL = "https://www.estatesales.net";
 export const IMG_CDN = "picturescdn.estatesales.net";
 
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} env var is required — see api/.env.example`);
+  return v;
+}
+
 export const HOME = {
-  address: process.env.HOME_ADDRESS ?? "YOUR_HOME_ADDRESS",
-  city: process.env.HOME_CITY ?? "Decatur",
-  state: process.env.HOME_STATE ?? "GA",
-  zip: process.env.HOME_ZIP ?? "YOUR_HOME_ZIP",
-  lat: Number(process.env.HOME_LAT ?? "0.0"),
-  lon: Number(process.env.HOME_LON ?? "0.0"),
+  address: requireEnv("HOME_ADDRESS"),
+  city: requireEnv("HOME_CITY"),
+  state: requireEnv("HOME_STATE"),
+  zip: requireEnv("HOME_ZIP"),
+  lat: Number(requireEnv("HOME_LAT")),
+  lon: Number(requireEnv("HOME_LON")),
 };
 
 export const DEFAULT_RADIUS_MILES = 30;

@@ -2,7 +2,8 @@
 # deploy-remote.sh — build locally, rsync to server via agent user, restart service
 set -euo pipefail
 
-REMOTE="agent@YOUR_DESKTOP_IP"
+DEPLOY_USER="${DEPLOY_USER:-estate-scraper}"
+REMOTE="agent@${DEPLOY_HOST:?DEPLOY_HOST is required}"
 SSH_KEY="$HOME/.ssh/agent_ed25519"
 SSH="ssh -i $SSH_KEY"
 RSYNC="rsync -az --delete -e 'ssh -i $SSH_KEY'"

@@ -13,7 +13,7 @@ Scrapes estatesales.net within a geographic radius, runs local Ollama vision ana
 - **DB**: Drizzle ORM + better-sqlite3 (SQLite)
 - **UI**: React 19 + TypeScript + Tailwind v4 + Vite
 - **Scraping**: native fetch + cheerio
-- **Vision**: native fetch → Ollama at `YOUR_DESKTOP_IP:11434`, model `llava:13b`
+- **Vision**: native fetch → Ollama at `$OLLAMA_HOST` (default: `http://localhost:11434`), model `llava:13b`
 - **Auth**: OIDC client against self-hosted Authentik (stub identity during development)
 - **Monorepo**: `api/` + `ui/` workspaces, root `package.json`
 - **Scheduler**: macOS LaunchAgent, fires Friday 1:00am
@@ -27,7 +27,7 @@ Use these terms exactly. Never substitute synonyms.
 - **Hunt** — a named, saved keyword filter owned by a user (OIDC sub claim), used to narrow Findings to current interests. Not "filter", "search", or "watchlist".
 - **Scan** — a full scheduled run: scrape all Sales in Radius + vision analysis on every image. Accumulates — never overwrites. Not "job", "run", or "crawl".
 - **Radius** — geographic search boundary in miles, centered on Home. Not "area" or "region".
-- **Home** — fixed reference address: YOUR_HOME_ADDRESS, Decatur GA YOUR_HOME_ZIP. Used for distance calculation and Radius center.
+- **Home** — fixed reference address set via HOME_* env vars (HOME_ADDRESS, HOME_CITY, HOME_STATE, HOME_ZIP, HOME_LAT, HOME_LON). Used for distance calculation and Radius center.
 - **Plan** — a user's ordered set of Sales chosen for a given day, drag-reorderable by visit sequence. Not "route", "itinerary", or "shortlist".
 
 ## Routes

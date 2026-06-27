@@ -35,7 +35,7 @@ import { summarize } from "./score.js";
 import { printSummary, printComparison, printImageResults } from "./report.js";
 import { runEval, type ApiConfig } from "./run.js";
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://YOUR_DESKTOP_IP:11434";
+const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://localhost:11434";
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5vl:7b-q8_0";
 const LABELS_PATH = resolve(import.meta.dirname, "labels.json");
 
