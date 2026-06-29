@@ -47,3 +47,7 @@ _Avoid_: baseline, full scan, gold run
 **Identifier**:
 The product's chosen scope — it tells the user which Sales are worth attending by recognizing and describing desirable items, leaving on-site appraisal to the user. Contrasted with a Deal-Finder, which would attach market prices to items and flag underpriced ones; that requires external comps data and is out of current scope.
 _Avoid_: appraiser, valuer, deal-finder (when describing current scope)
+
+**Outcome**:
+The user's own verdict on a Sale after attending it — good, meh, or waste. Authored by a human, never derived, so it cannot be regenerated and is the irreplaceable signal the system learns the user's taste from.
+_Avoid_: result, rating, feedback, review
