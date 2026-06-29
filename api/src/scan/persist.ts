@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { findings, images, sales, userSettings } from "../db/schema.js";
 import { DEFAULT_RADIUS_MILES } from "../lib/scraping.js";
@@ -129,6 +129,94 @@ export async function insertFindingsBatch(
         .onConflictDoNothing();
     }
   });
+}
+
+// Persist every analyzed photo — winners AND junk (ADR 0014) — with its dedup
+// fingerprint and listing position. UNIQUE(sale_id, image_url) makes re-scans
+// idempotent; on conflict we refresh phash/position so the backfilled finding-only
+// rows (phash NULL) get their fingerprint filled the next time the sale is scanned.
+export async function upsertAnalyzedImages(
+  saleId: string,
+  imgs: Array<{
+    imageUrl: string;
+    phash: string | null;
+    positionPct: number;
+    thumbnailPath: string | null;
+  }>,
+): Promise<void> {
+  if (imgs.length === 0) return;
+  await db.transaction(async (tx) => {
+    for (const img of imgs) {
+      await tx
+        .insert(images)
+        .values({
+          saleId,
+          imageUrl: img.imageUrl,
+          phash: img.phash,
+          positionPct: img.positionPct,
+          thumbnailPath: img.thumbnailPath,
+        })
+        .onConflictDoUpdate({
+          target: [images.saleId, images.imageUrl],
+          // coalesce(new, existing): a failed re-scan write (null) must never clobber
+          // a phash/thumbnail already captured on a prior scan.
+          set: {
+            phash: sql`coalesce(excluded.phash, ${images.phash})`,
+            positionPct: sql`coalesce(excluded.position_pct, ${images.positionPct})`,
+            thumbnailPath: sql`coalesce(excluded.thumbnail_path, ${images.thumbnailPath})`,
+          },
+        });
+    }
+  });
+}
+
+// Images that have a thumbnail but no embedding yet, excluding boilerplate (never
+// embedded — ADR 0014). Drives the post-scan embed pass and doubles as the re-embed
+// query for a frozen-model migration (ADR 0016): null the column, re-run.
+export async function getImagesNeedingEmbedding(
+  limit = 10000,
+): Promise<Array<{ id: number; thumbnailPath: string }>> {
+  const rows = await db
+    .select({ id: images.id, thumbnailPath: images.thumbnailPath })
+    .from(images)
+    .where(
+      and(
+        isNull(images.embedding),
+        isNotNull(images.thumbnailPath),
+        eq(images.isBoilerplate, false),
+      ),
+    )
+    .limit(limit);
+  return rows.filter(
+    (r): r is { id: number; thumbnailPath: string } => r.thumbnailPath !== null,
+  );
+}
+
+export async function updateImageEmbedding(
+  id: number,
+  embedding: Buffer,
+  embedModel: string,
+  embedDim: number,
+): Promise<void> {
+  await db.update(images).set({ embedding, embedModel, embedDim }).where(eq(images.id, id));
+}
+
+// Flag boilerplate: an identical phash appearing across >= minSales distinct sales
+// is an org logo / filler banner, not a real item — excluded from training (ADR 0014).
+// Recomputed wholesale each scan so the flag tracks the growing corpus in both
+// directions. Near-dupe collapse happens within a sale (hamming threshold); this is
+// exact-phash equality across sales.
+export async function markBoilerplateImages(minSales = 5): Promise<void> {
+  await db.run(sql`
+    UPDATE images SET is_boilerplate = (
+      phash IS NOT NULL AND phash IN (
+        SELECT phash FROM images
+        WHERE phash IS NOT NULL
+        GROUP BY phash
+        HAVING COUNT(DISTINCT sale_id) >= ${minSales}
+      )
+    )
+  `);
 }
 
 export async function getScanRadiusMiles(): Promise<number> {

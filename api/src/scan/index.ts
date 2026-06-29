@@ -8,10 +8,13 @@ import {
   getProcessedImageUrls,
   getScanRadiusMiles,
   insertFindingsBatch,
+  markBoilerplateImages,
   updateSaleAnalysis,
   updateSaleOracle,
+  upsertAnalyzedImages,
   upsertSale,
 } from "./persist.js";
+import { embedPendingImages } from "./embed-pass.js";
 import { ScanStateWriter } from "./state.js";
 
 type ScanOptions = {
@@ -122,6 +125,12 @@ async function main() {
       confidence: Confidence | null;
       imagePositionPct: number;
     }> = [];
+    let analyzedBuffer: Array<{
+      imageUrl: string;
+      phash: string | null;
+      positionPct: number;
+      thumbnailPath: string | null;
+    }> = [];
 
     for await (const event of processSalesStream(scrapedSales, {
       maxImages: args.maxImages,
@@ -138,6 +147,7 @@ async function main() {
         currentSaleUrl = sale.url;
         currentSaleAddress = `${sale.address}, ${sale.city}, ${sale.state}`;
         saleBuffer = [];
+        analyzedBuffer = [];
         console.log(
           `\n[${event.saleIdx + 1}/${event.totalSales}] ${event.title.slice(0, 60)}`,
         );
@@ -154,6 +164,13 @@ async function main() {
         });
         const confLabel = event.confidence ? ` [${event.confidence}]` : "";
         console.log(`  FOUND${confLabel}: ${event.description.slice(0, 80)}`);
+      } else if (event.type === "analyzed_image") {
+        analyzedBuffer.push({
+          imageUrl: event.imageUrl,
+          phash: event.phash,
+          positionPct: event.positionPct,
+          thumbnailPath: event.thumbnailPath,
+        });
       } else if (event.type === "image_result") {
         totalImages++;
         if (event.hasFindings) totalFindings++;
@@ -204,6 +221,8 @@ async function main() {
         if (!args.referencePath) {
           totalImages += event.imagesProcessed;
           if (currentSaleId) {
+            // Image rows first (with phash) so findings just link image_id.
+            await upsertAnalyzedImages(currentSaleId, analyzedBuffer);
             await insertFindingsBatch(currentSaleId, saleBuffer, scrapedAt);
             if (event.analysisPhase !== "EARLY_STOP") {
               await updateSaleAnalysis(currentSaleId, event.imagesProcessed, event.analysisPhase);
@@ -223,6 +242,20 @@ async function main() {
         `\nReference pass complete: ${refRecords.length} images, ${withFindings} with findings → ${args.referencePath}`,
       );
     } else {
+      // Cross-sale boilerplate detection runs once the full corpus is updated, so the
+      // embed pass below can skip boilerplate rows.
+      await markBoilerplateImages();
+
+      // Embed every analyzed image from its thumbnail (ADR 0013/0016). No-op unless
+      // EMBED_API_BASE is configured; failures are non-fatal (rows stay NULL, retried
+      // next scan). Runs after persistence so a crash here never loses findings.
+      const embed = await embedPendingImages();
+      if (embed.skipped) {
+        console.log("  [embed] skipped — EMBED_API_BASE not set");
+      } else {
+        console.log(`  [embed] done — ${embed.embedded} embedded, ${embed.failed} failed`);
+      }
+
       writer.finish(`Done — ${totalFindings} findings across ${totalImages} images.`);
       console.log(`\nScan complete: ${totalFindings} findings across ${totalImages} images.`);
     }
