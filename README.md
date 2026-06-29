@@ -2,7 +2,7 @@
 
 Scrapes estatesales.net listings and surfaces sales worth attending based on configurable keyword hunts. The vision pipeline runs a cost cascade — free pixel checks and a near-free embedding ranker decide which images deserve a look, and the expensive strong-VLM tier runs only on the top images, bounded by a dollar budget rather than a score threshold. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md).
 
-[![CI](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml)
+[![CI](https://github.com/preston-bernstein/estate-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/preston-bernstein/estate-scraper/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -97,7 +97,7 @@ scripts/      LaunchAgent plist, deploy helpers
 **Prerequisites:** Node.js ≥ 22, Ollama with a vision model loaded, SQLite (bundled).
 
 ```bash
-git clone https://github.com/prestonbernstein/estate-scraper
+git clone https://github.com/preston-bernstein/estate-scraper
 cd estate-scraper
 cp api/.env.example api/.env
 # edit api/.env — set HOME_LAT, HOME_LON, and OLLAMA_HOST at minimum
