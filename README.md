@@ -1,6 +1,6 @@
 # estate-scraper
 
-Scrapes estatesales.net listings and surfaces sales worth attending based on configurable keyword hunts. The vision pipeline runs a cost cascade — cheap signals gate expensive compute at each stage so RunPod serverless inference is only invoked on images that survive free pixel checks, a local Ollama gate, and adaptive sampling.
+Scrapes estatesales.net listings and surfaces sales worth attending based on configurable keyword hunts. The vision pipeline runs a cost cascade — free pixel checks and a near-free embedding ranker decide which images deserve a look, and the expensive strong-VLM tier runs only on the top images, bounded by a dollar budget rather than a score threshold. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md).
 
 [![CI](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/prestonbernstein/estate-scraper/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
@@ -15,24 +15,17 @@ estatesales.net
   Scraper (Node.js)
       │  listings within configured radius
       ▼
-  pHash dedup                              free  — Sharp pixel math, no model
-      │  near-duplicate images removed
+  Tier 0 · pHash dedup + quality gate      free  — Sharp pixel math, no model
+      │  near-duplicate / dark / blurry images removed
       ▼
-  Adaptive sampling                        free  — score arithmetic
-      │  lead 25% → score → tail probe if weak → EARLY_STOP
-      │  sales with no signal dropped before any model is called
+  Tier 1 · embedding ranker                ~free — CLIP/SigLIP, batched, no generation
+      │  every survivor scored "plausibly worth a look", ranked
       ▼
-  Quality gate                             free  — brightness + variance check
-      │  dark / blurry images rejected
+  Budget gate                              the dial — top-K, K = budget ÷ cost/image
+      │  per-sale floor + remainder by rank · cheap tiers never judge value
       ▼
-  Local Qwen3 gate                         cheap — local GPU, ~1 s/image
-      │  exteriors, empty rooms, HVAC → SKIP     [RunPod mode only]
-      ▼
-  Full vision                              expensive — RunPod serverless or local Ollama
-      │  qwen3-vl:30b · confidence tags ([high] / [medium] / [low])
-      ▼
-  Oracle escalation                        expensive — cloud VL model, per sale
-      │  uncertain-zone sales (score 0.1–0.6) only
+  Tier 2 · strong VLM (top-K only)         expensive — RunPod serverless 32B
+      │  identification + desirability · confidence tags ([high]/[medium]/[low])
       ▼
   SQLite (Drizzle ORM)
       │
@@ -42,28 +35,22 @@ estatesales.net
 
 ### Cost cascade
 
-Each stage is ordered by cost. A free check gates a cheap check; a cheap check gates an expensive one. RunPod inference is only invoked on images that survive everything upstream.
+Stages are ordered by cost, and the expensive tier is bounded by a **dollar budget, not a score threshold** — so spend is a dial the operator sets, not an emergent outcome the gates have to hit. The cheap tiers do coarse **noise removal only**; they never judge whether an item is *valuable* (that is Tier 2's job), which keeps false-negatives — dropped good items — low. Both RunPod endpoints scale to zero, so cost is $0 outside the weekly Scan.
 
-| Stage | Cost | What it rejects |
+| Tier | Cost | Role |
 |---|---|---|
-| pHash dedup | free | Near-duplicate images (CDN resizes, repeated hero shots) |
-| Adaptive sampling | free | Entire sales with no signal in lead + tail probe |
-| Quality gate | free | Dark or blurry images (pixel variance / mean brightness) |
-| Local Qwen3 gate | cheap (local GPU) | Exteriors, empty rooms, HVAC, price boards — active in RunPod mode only |
-| Full vision | expensive (RunPod or local Ollama) | — |
-| Oracle escalation | expensive (cloud VL model) | Skipped unless sale score is in uncertain zone (0.1–0.6) |
+| 0 · pHash dedup + quality gate | free (CPU) | Drop near-duplicates, dark/blurry images |
+| 1 · embedding ranker | ~free (~$0.01–0.05/scan) | Rank every survivor by "plausibly worth a closer look" |
+| Budget gate | — | Select the top-K images, `K = budget ÷ cost_per_image` |
+| 2 · strong VLM | expensive (RunPod 32B) | Identify items + rate desirability — top-K images only |
 
-The local gate only activates when `RUNPOD_ENDPOINT_ID` is set. Running a second local model call to gate the first local model call has no cost benefit; the gate exists to reduce paid RunPod invocations.
-
-### Adaptive sampling
-
-1. **Lead sample** — analyze the first 25% of unique images, compute a weighted sale score
-2. **High confidence** (score ≥ 0.8) — proceed to full pass immediately
-3. **Low signal** (score < 0.1) — probe 8 random images from the last 30%
-4. **Tail probe empty** — sale is dropped (`EARLY_STOP`), no further model calls
-5. **Uncertain zone** (score 0.1–0.6 after full pass) — escalate to oracle
+**Budget-bounded escalation.** Tier 1 produces a ranking, not a pass/fail. The budget gate spends a per-scan image budget on the highest-ranked images first, allocated **per-sale floor + remainder**: every sale clearing Tier 0 gets a guaranteed minimum (e.g. top 4 images) to the 32B, then leftover budget goes to the best-ranked images globally — so photo-dense sales can't starve the rest. A miscalibrated ranker still cannot blow the budget; it only spends on slightly worse-ranked images.
 
 Each finding line carries a plain-text confidence tag (`[high]`, `[medium]`, or `[low]`). Plain text outperformed JSON-constrained output 89% vs 50% in eval.
+
+### Calibration
+
+Cheap-tier choices (`K`, the per-sale floor, the ranker prompts/exemplars) are tuned against a one-time **reference pass**: a single money-no-object Scan that sends every image through the 32B (~$22, frozen). Thereafter `recall@K` — what fraction of the reference's findings the cascade actually selected — is measured offline for free, yielding a "$X/mo captures Y% of full-pass findings" curve. The budget is chosen from that curve, with data rather than guesswork. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md).
 
 ### Hunt matching
 
@@ -71,17 +58,17 @@ Users define keyword hunts (e.g. `velvet painting`, `Atari`, `Stickley`). Findin
 
 ### Feedback loop
 
-After attending a sale, users log an outcome (`good` / `meh` / `waste`). Outcomes are stored alongside `imagePositionPct` and `confidence` columns to support future threshold calibration.
+After attending a sale, users log an outcome (`good` / `meh` / `waste`). Outcomes are stored alongside `imagePositionPct` and `confidence`, and feed back two ways: as confirmed-good / confirmed-junk exemplars for the Tier-1 ranker, and as a re-weighting signal that pulls the generic desirability prior toward the user's actual market over time. See [ADR 0011](docs/adr/0011-value-aware-identifier-comps-deferred.md).
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
 | Scraper | Node.js, custom HTML parser |
-| Image pre-filter | Sharp (pHash dedup, quality gate) |
-| Vision — local | Ollama `qwen3-vl:30b` on AMD RX 9070 XT |
-| Vision — cloud | RunPod serverless (`RUNPOD_ENDPOINT_ID`; local Qwen3 gate activates) |
-| Oracle | OpenAI-compatible API (RunPod, Together, Hyperbolic) for uncertain-zone sales |
+| Tier 0 — pre-filter | Sharp (pHash dedup, quality gate), CPU |
+| Tier 1 — ranker | CLIP/SigLIP embeddings, batched, scores every survivor |
+| Tier 2 — strong VLM | RunPod serverless `qwen3-vl:30b` / `Qwen3-VL-32B`, top-K images only |
+| Calibration | One-time reference pass + offline `recall@K` against a labeled gold set |
 | API | Hono, SQLite, Drizzle ORM |
 | UI | React, Vite, Tailwind CSS |
 | Auth | JWT via OIDC / Authentik (stub mode for local dev) |

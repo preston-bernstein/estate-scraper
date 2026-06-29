@@ -85,6 +85,19 @@ export type VisionEvent =
       totalImages: number;
       saleScore: number;
     }
+  | {
+      // Reference mode only — one event per analyzed image, including NOTHING
+      // responses. This is the raw material for the frozen reference pass that
+      // recall@K is measured against (ADR 0010). Never emitted in normal scans.
+      type: "image_result";
+      saleId: string;
+      imageUrl: string;
+      response: string;
+      error: string;
+      positionIndex: number;
+      total: number;
+      hasFindings: boolean;
+    }
   | { type: "done" };
 
 type ImageResult = {
@@ -434,11 +447,13 @@ export async function* processSalesStream(
     skipUrls?: Set<string>;
     workers?: number;
     dryRun?: boolean;
+    referenceMode?: boolean;
   } = {},
 ): AsyncGenerator<VisionEvent> {
   const skipUrls = options.skipUrls ?? new Set<string>();
   const workers = options.workers ?? VISION_WORKERS;
   const dryRun = options.dryRun ?? false;
+  const referenceMode = options.referenceMode ?? false;
   const totalSales = sales.length;
 
   for (const [saleIdx, sale] of sales.entries()) {
@@ -501,6 +516,46 @@ export async function* processSalesStream(
         imagesProcessed: 0,
         imagesWithFindings: 0,
         errors: 0,
+        analysisPhase: "FULL",
+        totalImages: total,
+        saleScore: 0,
+      };
+      continue;
+    }
+
+    // ── Reference mode: full pass, no sampling, emit every image ──────────
+    // Money-no-object ground truth for recall@K (ADR 0010). Tier 0 (dedup +
+    // quality gate) still applies so the reference universe matches what the
+    // cheap cascade will later rank; sampling/local-gate/oracle are bypassed.
+    if (referenceMode) {
+      const refResults = await mapPool(uniqueImages, workers, (img) =>
+        processImage(img.url, sale.saleId, img.buffer),
+      );
+      let refFound = 0;
+      let refErrors = 0;
+      for (const [i, r] of refResults.entries()) {
+        if (r.error) refErrors++;
+        const has = !r.error && hasFindings(r.response);
+        if (has) refFound++;
+        yield {
+          type: "image_result",
+          saleId: sale.saleId,
+          imageUrl: r.url,
+          response: r.response,
+          error: r.error,
+          positionIndex: i,
+          total,
+          hasFindings: has,
+        };
+      }
+      yield {
+        type: "sale_done",
+        saleId: sale.saleId,
+        title: sale.title,
+        url: sale.url,
+        imagesProcessed: refResults.length,
+        imagesWithFindings: refFound,
+        errors: refErrors,
         analysisPhase: "FULL",
         totalImages: total,
         saleScore: 0,

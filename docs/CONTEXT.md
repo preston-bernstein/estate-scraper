@@ -35,3 +35,15 @@ _Avoid_: route, itinerary, shortlist, queue
 **Standout**:
 A Finding whose `scoreFinding()` score is ≥ 4, eligible for display in the horizontal featured-item scroll on the Discover page. Standouts surface the single best individual items across all Sales, not the best Sales overall.
 _Avoid_: featured, highlight, top pick, hero
+
+**Desirability**:
+How much a collector is likely to want an identified item, expressed as high / medium / low. Distinct from identification (what the item *is*) and from price (what it would *sell* for). Sourced from the vision model's own judgment, a curated maker lexicon, and the user's logged Outcomes — never from external market data in the current scope.
+_Avoid_: value, worth, price, quality
+
+**Reference Pass**:
+A single money-no-object Scan that sends every image through the strong vision model with no budgeting, frozen and reused as the ground-truth oracle against which the cheap cascade tiers are tuned offline. Not a recurring Scan; run rarely, by intent.
+_Avoid_: baseline, full scan, gold run
+
+**Identifier**:
+The product's chosen scope — it tells the user which Sales are worth attending by recognizing and describing desirable items, leaving on-site appraisal to the user. Contrasted with a Deal-Finder, which would attach market prices to items and flag underpriced ones; that requires external comps data and is out of current scope.
+_Avoid_: appraiser, valuer, deal-finder (when describing current scope)

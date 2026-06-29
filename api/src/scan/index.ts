@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { runMigrations } from "../db/index.js";
 import { scrapeWithinRadius } from "../scraper/index.js";
 import { callOracle } from "../vision/oracle.js";
@@ -19,6 +20,7 @@ type ScanOptions = {
   maxImages?: number;
   skipVision?: boolean;
   dryRun?: boolean;
+  referencePath?: string;
 };
 
 function parseArgs(argv: string[]): ScanOptions {
@@ -36,11 +38,26 @@ function parseArgs(argv: string[]): ScanOptions {
       options.skipVision = true;
     } else if (arg === "--dry-run") {
       options.dryRun = true;
+    } else if (arg === "--reference") {
+      // Frozen ground-truth dump: every image through the strong model, no gating.
+      options.referencePath = argv[++index] ?? "./data/reference-pass.json";
     }
   }
 
   return options;
 }
+
+type ReferenceRecord = {
+  saleId: string;
+  saleTitle: string;
+  saleUrl: string;
+  imageUrl: string;
+  positionIndex: number;
+  total: number;
+  response: string;
+  hasFindings: boolean;
+  error: string;
+};
 
 async function main() {
   runMigrations();
@@ -89,12 +106,15 @@ async function main() {
     writer.setPhase("analyzing", "Running vision analysis…");
     writer.pushEvent({ type: "phase", phase: "analyzing", msg: "Running vision analysis…" });
 
-    const skipUrls = await getProcessedImageUrls();
+    // Reference mode re-analyzes everything from scratch — never skip prior images.
+    const skipUrls = args.referencePath ? new Set<string>() : await getProcessedImageUrls();
+    const refRecords: ReferenceRecord[] = [];
     let totalFindings = 0;
     let totalImages = 0;
 
     let currentSaleId: string | null = null;
     let currentSaleTitle = "";
+    let currentSaleUrl = "";
     let currentSaleAddress = "";
     let saleBuffer: Array<{
       imageUrl: string;
@@ -107,6 +127,7 @@ async function main() {
       maxImages: args.maxImages,
       dryRun: args.dryRun,
       skipUrls,
+      referenceMode: Boolean(args.referencePath),
     })) {
       writer.pushEvent(event);
 
@@ -114,6 +135,7 @@ async function main() {
         const sale = scrapedSales[event.saleIdx]!;
         currentSaleId = sale.saleId;
         currentSaleTitle = sale.title;
+        currentSaleUrl = sale.url;
         currentSaleAddress = `${sale.address}, ${sale.city}, ${sale.state}`;
         saleBuffer = [];
         console.log(
@@ -132,6 +154,23 @@ async function main() {
         });
         const confLabel = event.confidence ? ` [${event.confidence}]` : "";
         console.log(`  FOUND${confLabel}: ${event.description.slice(0, 80)}`);
+      } else if (event.type === "image_result") {
+        totalImages++;
+        if (event.hasFindings) totalFindings++;
+        refRecords.push({
+          saleId: event.saleId,
+          saleTitle: currentSaleTitle,
+          saleUrl: currentSaleUrl,
+          imageUrl: event.imageUrl,
+          positionIndex: event.positionIndex,
+          total: event.total,
+          response: event.response,
+          hasFindings: event.hasFindings,
+          error: event.error,
+        });
+        if (refRecords.length % 100 === 0) {
+          console.log(`  [reference] ${refRecords.length} images recorded…`);
+        }
       } else if (event.type === "sale_skip") {
         console.log(
           `  SKIP: nothing found in ${event.imagesAnalyzed} images analyzed of ${event.totalImages} total`,
@@ -158,21 +197,35 @@ async function main() {
           );
         }
       } else if (event.type === "sale_done") {
-        totalImages += event.imagesProcessed;
         console.log(
           `  Done [${event.analysisPhase}]: ${event.imagesWithFindings} findings / ${event.imagesProcessed} analyzed (${event.totalImages} total) — score ${event.saleScore.toFixed(2)}`,
         );
-        if (currentSaleId) {
-          await insertFindingsBatch(currentSaleId, saleBuffer, scrapedAt);
-          if (event.analysisPhase !== "EARLY_STOP") {
-            await updateSaleAnalysis(currentSaleId, event.imagesProcessed, event.analysisPhase);
+        // Reference mode counts per image_result and writes no findings to the DB.
+        if (!args.referencePath) {
+          totalImages += event.imagesProcessed;
+          if (currentSaleId) {
+            await insertFindingsBatch(currentSaleId, saleBuffer, scrapedAt);
+            if (event.analysisPhase !== "EARLY_STOP") {
+              await updateSaleAnalysis(currentSaleId, event.imagesProcessed, event.analysisPhase);
+            }
           }
         }
       }
     }
 
-    writer.finish(`Done — ${totalFindings} findings across ${totalImages} images.`);
-    console.log(`\nScan complete: ${totalFindings} findings across ${totalImages} images.`);
+    if (args.referencePath) {
+      writeFileSync(args.referencePath, JSON.stringify(refRecords, null, 2));
+      const withFindings = refRecords.filter((r) => r.hasFindings).length;
+      writer.finish(
+        `Reference pass — ${refRecords.length} images (${withFindings} with findings) → ${args.referencePath}`,
+      );
+      console.log(
+        `\nReference pass complete: ${refRecords.length} images, ${withFindings} with findings → ${args.referencePath}`,
+      );
+    } else {
+      writer.finish(`Done — ${totalFindings} findings across ${totalImages} images.`);
+      console.log(`\nScan complete: ${totalFindings} findings across ${totalImages} images.`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown scan error";
     writer.pushEvent({ type: "error", msg: message });
