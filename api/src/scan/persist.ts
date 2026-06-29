@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { findings, sales, userSettings } from "../db/schema.js";
+import { findings, images, sales, userSettings } from "../db/schema.js";
 import { DEFAULT_RADIUS_MILES } from "../lib/scraping.js";
 import type { AnalysisPhase, Confidence } from "../vision/index.js";
 import type { ScrapedSale } from "../scraper/index.js";
@@ -9,6 +9,29 @@ import { DEV_USER_SUB } from "../types/env.js";
 export async function getProcessedImageUrls(): Promise<Set<string>> {
   const rows = await db.select({ imageUrl: findings.imageUrl }).from(findings);
   return new Set(rows.map((row) => row.imageUrl));
+}
+
+// Insert-or-get the durable Image row for an analyzed photo (ADR 0014).
+// UNIQUE(sale_id, image_url) gives scan idempotency: a re-scanned sale links to the
+// existing row instead of duplicating it. embedding/phash/thumbnail are filled by the
+// vision pipeline (TODO) — null here keeps existing behavior non-breaking.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function upsertImage(
+  tx: Tx,
+  saleId: string,
+  imageUrl: string,
+  positionPct: number | null,
+): Promise<number> {
+  await tx
+    .insert(images)
+    .values({ saleId, imageUrl, positionPct })
+    .onConflictDoNothing();
+  const [row] = await tx
+    .select({ id: images.id })
+    .from(images)
+    .where(and(eq(images.saleId, saleId), eq(images.imageUrl, imageUrl)));
+  return row.id;
 }
 
 export async function upsertSale(sale: ScrapedSale, scrapedAt: string) {
@@ -69,10 +92,13 @@ export async function insertFinding(
   description: string,
   scrapedAt: string,
 ): Promise<void> {
-  await db
-    .insert(findings)
-    .values({ saleId, imageUrl, description, scrapedAt })
-    .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    const imageId = await upsertImage(tx, saleId, imageUrl, null);
+    await tx
+      .insert(findings)
+      .values({ saleId, imageId, imageUrl, description, scrapedAt })
+      .onConflictDoNothing();
+  });
 }
 
 export async function insertFindingsBatch(
@@ -88,10 +114,12 @@ export async function insertFindingsBatch(
   if (batch.length === 0) return;
   await db.transaction(async (tx) => {
     for (const f of batch) {
+      const imageId = await upsertImage(tx, saleId, f.imageUrl, f.imagePositionPct);
       await tx
         .insert(findings)
         .values({
           saleId,
+          imageId,
           imageUrl: f.imageUrl,
           description: f.description,
           scrapedAt,

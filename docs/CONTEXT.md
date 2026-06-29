@@ -12,6 +12,14 @@ _Avoid_: listing, event, result
 A single image from a Sale that the vision model flagged as containing potentially valuable items, together with the model's plain-text description of what it saw.
 _Avoid_: result, match, hit, detection
 
+**Image**:
+A single analyzed listing photo from a Sale — every photo the vision pipeline looked at, whether or not it was flagged. Carries the irreplaceable, durable facts that outlive the expired source listing: the CLIP/SigLIP embedding and the downscaled thumbnail. The full set of Images is the training substrate for the taste ranker; the flagged subset becomes Findings. A "waste" Outcome stamps confirmed-negative on all of a Sale's Images.
+_Avoid_: photo, picture, thumbnail (as the record name), asset
+
+**Item**:
+A single identified object within a Finding. One Finding (image) may contain many Items. An Item carries the normalized, queryable identification — maker, category, era, desirability — plus the provenance of how it was identified (vlm, lexicon, or human). Items are the unit that browse-history and any future valuation query and join against; the Finding is the unit the taste ranker trains on.
+_Avoid_: object, thing, lot, product, detection
+
 **Hunt**:
 A named, saved keyword filter belonging to a person, used to narrow the full set of Findings to items of current interest. A person may have multiple Hunts active at once, and interests change week to week.
 _Avoid_: filter, search, profile, watchlist
