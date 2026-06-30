@@ -183,8 +183,10 @@ export async function insertFindingsBatch(
         .onConflictDoNothing()
         .returning({ id: findings.id })
         .get();
-      // Only new findings get items — onConflictDoNothing returns nothing on re-scan,
-      // so item generation stays idempotent across scans.
+      // Idempotency is enforced UPSTREAM by the skip-set (getProcessedImageUrls): the
+      // scan stream filters already-analyzed image URLs before this runs, so a finding
+      // is inserted once. findings has no UNIQUE(sale_id, image_url), so the
+      // onConflictDoNothing above is belt-and-suspenders, not the real guard.
       if (inserted) {
         insertFindingItems(
           tx,
