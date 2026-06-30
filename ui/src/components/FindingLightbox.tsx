@@ -1,5 +1,6 @@
 import { useEffect, useRef, type TouchEvent } from "react";
 import type { Finding } from "../types";
+import { ResilientImage } from "./ResilientImage";
 
 type FindingLightboxProps = {
   findings: Finding[];
@@ -105,8 +106,8 @@ export function FindingLightbox({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <img
-          src={finding.imageUrl}
+        <ResilientImage
+          srcs={[finding.thumbUrl, finding.imageUrl]}
           alt={finding.description}
           className="max-h-[70vh] w-full object-contain"
         />

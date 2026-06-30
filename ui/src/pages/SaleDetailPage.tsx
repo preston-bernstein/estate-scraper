@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { DateBadge } from "../components/DateBadge";
 import { FindingLightbox } from "../components/FindingLightbox";
 import { SaleMap } from "../components/SaleMap";
+import { ResilientImage } from "../components/ResilientImage";
 import { api } from "../lib/api";
 import { cleanTitle, formatDistance } from "../lib/format";
 import type { Finding, SaleSummary } from "../types";
@@ -190,8 +191,8 @@ export function SaleDetailPage() {
                   className="block w-full text-left"
                   onClick={() => setLightboxIndex(index)}
                 >
-                  <img
-                    src={finding.imageUrl}
+                  <ResilientImage
+                    srcs={[finding.thumbUrl, finding.imageUrl]}
                     alt={finding.description}
                     className="aspect-square w-full object-cover"
                   />

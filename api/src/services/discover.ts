@@ -2,6 +2,7 @@ import { and, gte, inArray, or, sql } from "drizzle-orm";
 import { todayIsoDate } from "../lib/date.js";
 import { db } from "../db/index.js";
 import { findings, sales } from "../db/schema.js";
+import { thumbUrlForImageId } from "./sales.js";
 
 const ELECTRONICS = /atari|sega|nintendo|commodore|colecovision|intellivision|arcade|console|cartridge|reel.to.reel|turntable|amplifier|receiver|tube radio|tube tv|polaroid|apple ii|trs-80|commodore 64/i;
 const KITSCH = /velvet|paint.by.number|taxidermy|ceramic.*rooster|ceramic.*poodle|ceramic.*flamingo|tiki|lava lamp|snow globe|outsider|kitschy|novelty figurine|rooster.*lamp|rooster.*figurine/i;
@@ -11,6 +12,7 @@ const ERA = /mid.century|victorian|arts.?&?.?crafts|art.deco|art.nouveau|mission
 export type DiscoverFinding = {
   id: number;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   score: number;
   tag: "electronics" | "kitsch" | "collectible" | "furniture";
@@ -35,6 +37,7 @@ export type RankedSale = {
 export type Standout = {
   id: number;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   saleId: string;
   saleTitle: string;
@@ -103,6 +106,7 @@ export async function getDiscoverData(): Promise<{
     const scored = saleFindings.map((f) => ({
       id: f.id,
       imageUrl: f.imageUrl,
+      thumbUrl: thumbUrlForImageId(f.imageId),
       description: f.description,
       score: scoreFinding(f.description, f.confidence),
       tag: tagFinding(f.description),
@@ -148,6 +152,7 @@ export async function getDiscoverData(): Promise<{
         standouts.push({
           id: f.id,
           imageUrl: f.imageUrl,
+          thumbUrl: thumbUrlForImageId(f.imageId),
           description: f.description,
           saleId: sale.saleId,
           saleTitle: sale.title,
@@ -226,6 +231,7 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
       .map((f) => ({
         id: f.id,
         imageUrl: f.imageUrl,
+        thumbUrl: thumbUrlForImageId(f.imageId),
         description: f.description,
         score: scoreFinding(f.description, f.confidence),
         tag: tagFinding(f.description),

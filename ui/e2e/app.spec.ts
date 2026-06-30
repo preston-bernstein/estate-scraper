@@ -30,3 +30,15 @@ test("Browse → All items shows the flagged-item grid", async ({ page }) => {
   await page.getByRole("button", { name: "All items" }).click();
   await expect(page.getByText("Stickley oak armchair")).toBeVisible();
 });
+
+test("item images prefer the durable /thumbs/ url (resilient to dead CDN)", async ({ page }) => {
+  await page.goto("/browse");
+  await page.getByRole("button", { name: "All items" }).click();
+  const img = page.getByAltText("Stickley oak armchair");
+  await expect(img).toHaveAttribute("src", /\/thumbs\/\d+/);
+});
+
+test("/thumbs/:id returns 404 for an unknown image (client falls back)", async ({ request }) => {
+  const res = await request.get("/thumbs/99999");
+  expect(res.status()).toBe(404);
+});

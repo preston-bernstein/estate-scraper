@@ -6,6 +6,7 @@ import {
   formatHuntMatchCounts,
 } from "../lib/format";
 import { DateBadge } from "./DateBadge";
+import { ResilientImage } from "./ResilientImage";
 
 type SaleCardProps = {
   sale: SaleSummary;
@@ -24,19 +25,11 @@ export function SaleCard({
     <article className="overflow-hidden rounded-xl bg-white shadow-sm">
       <Link to={`/sales/${sale.saleId}`} className="block p-4">
         <div className="flex gap-4">
-          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-            {sale.thumbnailUrl ? (
-              <img
-                src={sale.thumbnailUrl}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                No image
-              </div>
-            )}
-          </div>
+          <ResilientImage
+            srcs={[sale.thumbUrl, sale.thumbnailUrl]}
+            alt={sale.thumbnailDescription ?? cleanTitle(sale.title)}
+            className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100 object-cover"
+          />
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">

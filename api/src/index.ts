@@ -8,7 +8,7 @@ import { db, runMigrations } from "./db/index.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { huntRoutes, settingsRoutes } from "./routes/hunts.js";
 import { planRoutes } from "./routes/plan.js";
-import { findingsRoutes, salesRoutes, scanRoutes, statusRoutes } from "./routes/sales.js";
+import { findingsRoutes, salesRoutes, scanRoutes, statusRoutes, thumbsRoutes } from "./routes/sales.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { chatRoutes } from "./routes/chat.js";
 import { DEV_USER_SUB, type AppEnv } from "./types/env.js";
@@ -19,6 +19,10 @@ const app = new Hono<AppEnv>();
 
 app.use("*", cors());
 app.use("/api/*", authMiddleware);
+
+// Public thumbnail serving (no auth — see thumbsRoutes). Mounted before the static
+// catch-all so /thumbs/:id resolves to the file, not index.html.
+app.route("/thumbs", thumbsRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 app.get("/api/me", (c) => c.json({ sub: c.get("userSub") }));

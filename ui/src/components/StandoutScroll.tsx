@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { Standout } from "../types";
 import { cn } from "../lib/utils";
+import { ResilientImage } from "./ResilientImage";
 
 const TAG_COLORS: Record<Standout["tag"], string> = {
   electronics: "bg-blue-500/10 text-blue-400 ring-blue-500/20",
@@ -34,18 +35,11 @@ export function StandoutScroll({ standouts }: Props) {
             className="flex-none w-44 group"
           >
             <div className="aspect-square rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 mb-2 relative">
-              {s.imageUrl ? (
-                <img
-                  src={s.imageUrl}
-                  alt=""
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-zinc-400 text-2xl">
-                  ?
-                </div>
-              )}
+              <ResilientImage
+                srcs={[s.thumbUrl, s.imageUrl]}
+                alt={s.description}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
               <span
                 className={cn(
                   "absolute top-1.5 left-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ring-1",

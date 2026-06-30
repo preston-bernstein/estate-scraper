@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { SaleCard } from "../components/SaleCard";
+import { ResilientImage } from "../components/ResilientImage";
 import { ErrorState, LoadingState } from "../components/states";
 import { friendlyMessage } from "../components/ErrorBoundary";
 import { api } from "../lib/api";
@@ -101,10 +102,9 @@ export function BrowsePage() {
                 to={`/sales/${item.saleId}`}
                 className="group overflow-hidden rounded-xl bg-white shadow-sm dark:bg-zinc-800"
               >
-                <img
-                  src={item.imageUrl}
+                <ResilientImage
+                  srcs={[item.thumbUrl, item.imageUrl]}
                   alt={item.description}
-                  loading="lazy"
                   className="aspect-square w-full object-cover"
                 />
                 <p className="line-clamp-2 px-2 py-1.5 text-xs text-zinc-700 dark:text-zinc-300">
