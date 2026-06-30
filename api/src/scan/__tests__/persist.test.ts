@@ -86,25 +86,24 @@ describe("insertFindingsBatch (sync transaction regression)", () => {
     expect(stickley.prompt_version).toBe("enriched-v1");
   });
 
-  // Idempotency is NOT enforced at the DB layer here (findings has no
-  // UNIQUE(sale_id, image_url)), so re-calling the batch for the same image DOES
-  // create a second finding. In a real scan that never happens: the skip-set
-  // (getProcessedImageUrls) filters already-analyzed URLs upstream. This test pins
-  // that contract so nobody assumes the conflict clause is the guard.
-  it("findings are skip-set-gated, not DB-deduped (documents the real contract)", async () => {
-    const before = read((db) => (db.prepare("select count(*) c from findings").get() as { c: number }).c);
+  // UNIQUE(sale_id, image_url) makes re-running the batch a no-op: the finding
+  // conflicts (DO NOTHING) and its items aren't regenerated. The upstream skip-set
+  // avoids the wasted vision work; this is the durable DB-level guard.
+  it("is idempotent on re-run (UNIQUE(sale_id,image_url) → no dup finding/items)", async () => {
+    const before = read((db) => ({
+      findings: (db.prepare("select count(*) c from findings").get() as { c: number }).c,
+      items: (db.prepare("select count(*) c from finding_items").get() as { c: number }).c,
+    }));
     await persist.insertFindingsBatch(
       sale.saleId,
       [{ imageUrl: "https://cdn/a.jpg", description: "Stickley oak armchair", confidence: "high", imagePositionPct: 0 }],
       "2026-06-30T00:00:00Z",
     );
-    const after = read((db) => (db.prepare("select count(*) c from findings").get() as { c: number }).c);
-    expect(after).toBe(before + 1); // no DB constraint — duplicate inserted
-
-    // The actual guard: this URL is already in the skip-set, so the scan stream
-    // would never re-submit it.
-    const skip = await persist.getProcessedImageUrls();
-    expect(skip.has("https://cdn/a.jpg")).toBe(true);
+    const after = read((db) => ({
+      findings: (db.prepare("select count(*) c from findings").get() as { c: number }).c,
+      items: (db.prepare("select count(*) c from finding_items").get() as { c: number }).c,
+    }));
+    expect(after).toEqual(before); // re-run inserted nothing
   });
 });
 

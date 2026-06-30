@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `uniq_findings_sale_image_url` ON `findings` (`sale_id`,`image_url`);
