@@ -6,9 +6,9 @@ import {
   OLLAMA_MODEL,
   PHASH_HAMMING_THRESHOLD,
   PREFILTER_WORKERS,
-  RUNPOD_API_KEY,
-  RUNPOD_ENDPOINT_ID,
-  RUNPOD_MODEL,
+  VISION_API_BASE,
+  VISION_API_KEY,
+  VISION_API_MODEL,
   VISION_SYSTEM_PROMPT,
   VISION_USER_PROMPT,
   VISION_WORKERS,
@@ -344,16 +344,17 @@ async function runVisionOllama(imageBase64: string): Promise<string> {
     .trim();
 }
 
-async function runVisionRunpod(imageBase64: string): Promise<string> {
-  const url = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/openai/v1/chat/completions`;
-  const response = await fetch(url, {
+// OpenAI-compatible managed API (Gemini, OpenRouter, RunPod vLLM, etc.)
+// Gemini: VISION_API_BASE=https://generativelanguage.googleapis.com/v1beta/openai
+async function runVisionManaged(imageBase64: string): Promise<string> {
+  const response = await fetch(`${VISION_API_BASE}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${RUNPOD_API_KEY}`,
+      Authorization: `Bearer ${VISION_API_KEY}`,
     },
     body: JSON.stringify({
-      model: RUNPOD_MODEL,
+      model: VISION_API_MODEL,
       messages: [
         { role: "system", content: VISION_SYSTEM_PROMPT },
         {
@@ -370,7 +371,7 @@ async function runVisionRunpod(imageBase64: string): Promise<string> {
     signal: AbortSignal.timeout(120_000),
   });
 
-  if (!response.ok) throw new Error(`RunPod HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`Vision API HTTP ${response.status}`);
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -383,7 +384,7 @@ async function runVisionRunpod(imageBase64: string): Promise<string> {
 }
 
 function runVision(imageBase64: string): Promise<string> {
-  return RUNPOD_ENDPOINT_ID ? runVisionRunpod(imageBase64) : runVisionOllama(imageBase64);
+  return VISION_API_BASE ? runVisionManaged(imageBase64) : runVisionOllama(imageBase64);
 }
 
 // ─── Per-image processing (quality gate → local gate → full vision) ───────────
@@ -424,9 +425,9 @@ async function processImage(
       .toBuffer();
     const base64 = resized.toString("base64");
 
-    // Local gate runs only in RunPod mode — avoids spending VRAM on a second local model
-    // when the full-vision backend is also local Ollama (no benefit to double-gating).
-    if (RUNPOD_ENDPOINT_ID && !(await runLocalGate(base64))) {
+    // Local gate runs only when full-vision backend is a managed API — avoids double-gating
+    // when both gate and full-vision share the same local Ollama (no benefit, only latency).
+    if (VISION_API_BASE && !(await runLocalGate(base64))) {
       result.durationS = Math.round((performance.now() - started) / 10) / 100;
       return result;
     }
@@ -468,7 +469,7 @@ export async function checkModelAvailable(
   model = OLLAMA_MODEL,
   host = OLLAMA_HOST,
 ): Promise<boolean> {
-  if (RUNPOD_ENDPOINT_ID) return true;
+  if (VISION_API_BASE) return true;
 
   try {
     const response = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(5_000) });

@@ -5,10 +5,10 @@ export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
 // or VISION_SYSTEM_PROMPT changes meaning, so findings/items carry the seam.
 export const PROMPT_VERSION = "enriched-v1";
 
-// The VLM that actually ran: RunPod model when the serverless backend is configured,
+// The VLM that actually ran: managed API model when VISION_API_BASE is configured,
 // otherwise the local Ollama model. Stamped on findings + finding_items.
 export function activeVlmModel(): string {
-  return process.env.RUNPOD_ENDPOINT_ID ? RUNPOD_MODEL : OLLAMA_MODEL;
+  return VISION_API_BASE ? VISION_API_MODEL : OLLAMA_MODEL;
 }
 export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
@@ -39,10 +39,13 @@ export const LOCAL_GATE_SYSTEM =
 // so the model's attention budget stays on the image rather than re-reading criteria.
 export const LOCAL_GATE_PROMPT = "PASS or SKIP?";
 
-// RunPod serverless endpoint for full vision analysis (replaces local Ollama when set)
-export const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID ?? "";
-export const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY ?? "";
-export const RUNPOD_MODEL = process.env.RUNPOD_MODEL ?? "Qwen/Qwen3-VL-32B-Instruct";
+// Managed API for full vision analysis — any OpenAI-compatible endpoint (Gemini, OpenRouter, RunPod, etc.)
+// When set, replaces local Ollama for the full vision pass. Local gate still runs locally.
+// Gemini: VISION_API_BASE=https://generativelanguage.googleapis.com/v1beta/openai
+// RunPod: VISION_API_BASE=https://api.runpod.ai/v2/<endpoint_id>/openai/v1
+export const VISION_API_BASE = process.env.VISION_API_BASE ?? "";
+export const VISION_API_KEY = process.env.VISION_API_KEY ?? "";
+export const VISION_API_MODEL = process.env.VISION_API_MODEL ?? "gemini-2.5-flash";
 
 // System role — establishes context so the model doesn't need to infer it from the user message.
 // Separating system/user is the correct usage of instruction-tuned models (Qwen, Llama, etc.)
