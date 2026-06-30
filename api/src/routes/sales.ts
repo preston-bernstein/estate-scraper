@@ -8,6 +8,7 @@ import {
   getLastScannedAt,
   getOutcome,
   getSaleDetail,
+  getSaleImages,
   getThumbnailPath,
   listAllItems,
   listAllSales,
@@ -47,6 +48,11 @@ salesRoutes.get("/:id", async (c) => {
   }
 
   return c.json(detail);
+});
+
+salesRoutes.get("/:id/images", async (c) => {
+  const imgs = await getSaleImages(c.req.param("id"));
+  return c.json({ images: imgs });
 });
 
 salesRoutes.get("/:id/outcome", async (c) => {

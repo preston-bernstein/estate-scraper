@@ -130,6 +130,7 @@ async function main() {
       phash: string | null;
       positionPct: number;
       thumbnailPath: string | null;
+      visionResponse: string | null;
     }> = [];
 
     for await (const event of processSalesStream(scrapedSales, {
@@ -170,6 +171,7 @@ async function main() {
           phash: event.phash,
           positionPct: event.positionPct,
           thumbnailPath: event.thumbnailPath,
+          visionResponse: event.visionResponse,
         });
       } else if (event.type === "image_result") {
         totalImages++;

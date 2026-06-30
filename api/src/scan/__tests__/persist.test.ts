@@ -110,7 +110,7 @@ describe("insertFindingsBatch (sync transaction regression)", () => {
 describe("upsertAnalyzedImages", () => {
   it("persists every analyzed image with phash + thumbnail, idempotently", async () => {
     await persist.upsertAnalyzedImages(sale.saleId, [
-      { imageUrl: "https://cdn/c.jpg", phash: "00ff00ff00ff00ff", positionPct: 1, thumbnailPath: "/t/c.jpg" },
+      { imageUrl: "https://cdn/c.jpg", phash: "00ff00ff00ff00ff", positionPct: 1, thumbnailPath: "/t/c.jpg", visionResponse: null },
     ]);
     let row = read((db) =>
       db.prepare("select phash, thumbnail_path from images where image_url=?").get("https://cdn/c.jpg") as Record<string, unknown>,
@@ -120,7 +120,7 @@ describe("upsertAnalyzedImages", () => {
 
     // Re-run with a null phash must NOT clobber the existing one (coalesce guard).
     await persist.upsertAnalyzedImages(sale.saleId, [
-      { imageUrl: "https://cdn/c.jpg", phash: null, positionPct: 1, thumbnailPath: null },
+      { imageUrl: "https://cdn/c.jpg", phash: null, positionPct: 1, thumbnailPath: null, visionResponse: null },
     ]);
     row = read((db) =>
       db.prepare("select phash, thumbnail_path from images where image_url=?").get("https://cdn/c.jpg") as Record<string, unknown>,

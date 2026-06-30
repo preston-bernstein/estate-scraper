@@ -97,6 +97,7 @@ export type VisionEvent =
       phash: string | null;
       positionPct: number;
       thumbnailPath: string | null;
+      visionResponse: string | null; // raw VLM text; null = gated/skipped/error
     }
   | {
       // Reference mode only — one event per analyzed image, including NOTHING
@@ -204,6 +205,7 @@ function* emitAnalyzed(
       phash: phashByUrl.get(r.url) ?? null,
       positionPct: r.positionIndex / Math.max(total - 1, 1),
       thumbnailPath: r.thumbnailPath,
+      visionResponse: r.response || null,
     };
   }
 }

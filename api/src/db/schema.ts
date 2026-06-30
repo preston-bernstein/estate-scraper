@@ -44,6 +44,7 @@ export const images = sqliteTable("images", {
   phash: text("phash"), // perceptual hash for cross-sale content dedup
   isBoilerplate: integer("is_boilerplate", { mode: "boolean" }).notNull().default(false), // logo/filler seen in >=5 sales → excluded from training
   positionPct: real("position_pct"), // where in the listing
+  visionResponse: text("vision_response"), // raw VLM response text (null = gated/error)
   analyzedAt: text("analyzed_at").notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   uniqSaleImageUrl: unique("uniq_images_sale_image_url").on(t.saleId, t.imageUrl), // scan idempotency

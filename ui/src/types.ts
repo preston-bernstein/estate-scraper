@@ -144,6 +144,15 @@ export type ScanEvent =
   | { type: "error"; msg: string }
   | { type: string; [key: string]: unknown };
 
+export type AnalyzedImage = {
+  id: number;
+  imageUrl: string;
+  thumbnailPath: string | null;
+  positionPct: number | null;
+  visionResponse: string | null;
+  hasFindings: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";

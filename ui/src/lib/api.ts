@@ -1,5 +1,6 @@
 import type {
   AllItem,
+  AnalyzedImage,
   DiscoverResponse,
   Finding,
   FindingWithSale,
@@ -60,6 +61,8 @@ export const api = {
       matchedFindingCount: number;
       totalFindingCount: number;
     }>(`/api/sales/${id}`),
+  getSaleImages: (id: string) =>
+    request<{ images: AnalyzedImage[] }>(`/api/sales/${id}/images`),
   getOutcome: (saleId: string) =>
     request<{
       outcome: {

@@ -6,7 +6,91 @@ import { SaleMap } from "../components/SaleMap";
 import { ResilientImage } from "../components/ResilientImage";
 import { api } from "../lib/api";
 import { cleanTitle, formatDistance } from "../lib/format";
-import type { Finding, SaleSummary } from "../types";
+import type { AnalyzedImage, Finding, SaleSummary } from "../types";
+
+function ImageAuditPanel({ saleId }: { saleId: string }) {
+  const [open, setOpen] = useState(false);
+  const [imgs, setImgs] = useState<AnalyzedImage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  async function load() {
+    if (imgs !== null) { setOpen(true); return; }
+    setLoading(true);
+    try {
+      const res = await api.getSaleImages(saleId);
+      setImgs(res.images);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const findings = imgs?.filter((i) => i.hasFindings).length ?? 0;
+  const total = imgs?.length ?? 0;
+
+  return (
+    <section className="rounded-xl bg-white p-4 shadow-sm space-y-3">
+      <button
+        type="button"
+        onClick={() => (open ? setOpen(false) : void load())}
+        className="flex w-full items-center justify-between text-sm font-medium text-gray-700"
+      >
+        <span>
+          Image Audit
+          {imgs !== null && (
+            <span className="ml-2 font-normal text-gray-400">
+              {findings} hits / {total} analyzed
+            </span>
+          )}
+        </span>
+        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {loading && <p className="text-xs text-gray-400">Loading…</p>}
+
+      {open && imgs !== null && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400">
+            Green border = Gemini found something. Gray = nothing / gated. Click for raw response.
+          </p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {imgs.map((img) => {
+              const thumbSrc = img.thumbnailPath ? `/thumbs/${img.id}` : img.imageUrl;
+              const isExpanded = expanded === img.id;
+              return (
+                <div key={img.id} className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isExpanded ? null : img.id)}
+                    className={`block w-full overflow-hidden rounded-lg border-2 ${
+                      img.hasFindings
+                        ? "border-green-400"
+                        : "border-transparent"
+                    }`}
+                  >
+                    <img
+                      src={thumbSrc}
+                      alt=""
+                      className="aspect-square w-full object-cover"
+                      loading="lazy"
+                      onError={(e) => { (e.target as HTMLImageElement).src = img.imageUrl; }}
+                    />
+                  </button>
+                  {isExpanded && (
+                    <pre className="col-span-full whitespace-pre-wrap break-words rounded bg-zinc-50 p-2 text-xs text-zinc-700 leading-relaxed border border-zinc-200">
+                      {img.visionResponse ?? "(gated — no response)"}
+                    </pre>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 type Outcome = "good" | "meh" | "waste";
 
@@ -214,6 +298,8 @@ export function SaleDetailPage() {
           onChangeIndex={setLightboxIndex}
         />
       ) : null}
+
+      <ImageAuditPanel saleId={sale.saleId} />
 
       <section className="rounded-xl bg-white p-4 shadow-sm">
         <OutcomePanel saleId={sale.saleId} />

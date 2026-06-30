@@ -213,6 +213,7 @@ export async function upsertAnalyzedImages(
     phash: string | null;
     positionPct: number;
     thumbnailPath: string | null;
+    visionResponse: string | null;
   }>,
 ): Promise<void> {
   if (imgs.length === 0) return;
@@ -226,6 +227,7 @@ export async function upsertAnalyzedImages(
           phash: img.phash,
           positionPct: img.positionPct,
           thumbnailPath: img.thumbnailPath,
+          visionResponse: img.visionResponse,
         })
         .onConflictDoUpdate({
           target: [images.saleId, images.imageUrl],
@@ -235,6 +237,7 @@ export async function upsertAnalyzedImages(
             phash: sql`coalesce(excluded.phash, ${images.phash})`,
             positionPct: sql`coalesce(excluded.position_pct, ${images.positionPct})`,
             thumbnailPath: sql`coalesce(excluded.thumbnail_path, ${images.thumbnailPath})`,
+            visionResponse: sql`coalesce(excluded.vision_response, ${images.visionResponse})`,
           },
         })
         .run();

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { todayIsoDate } from "../lib/date.js";
 import { db } from "../db/index.js";
 import { findings, hunts, images, planItems, saleOutcomes, sales, userSettings } from "../db/schema.js";
@@ -396,6 +396,51 @@ export async function getOutcome(saleId: string, ownerSub: string) {
     .from(saleOutcomes)
     .where(and(eq(saleOutcomes.saleId, saleId), eq(saleOutcomes.ownerSub, ownerSub)));
   return row ?? null;
+}
+
+export async function getSaleImages(saleId: string) {
+  // All analyzed images for a sale, left-joined to findings so we know which had hits.
+  // Only returns rows that passed the quality gate (visionResponse NOT NULL or
+  // thumbnailPath present — i.e. something the model actually saw).
+  const rows = await db
+    .select({
+      id: images.id,
+      imageUrl: images.imageUrl,
+      thumbnailPath: images.thumbnailPath,
+      positionPct: images.positionPct,
+      visionResponse: images.visionResponse,
+      findingId: findings.id,
+    })
+    .from(images)
+    .leftJoin(findings, and(eq(findings.saleId, images.saleId), eq(findings.imageUrl, images.imageUrl)))
+    .where(and(eq(images.saleId, saleId), isNotNull(images.thumbnailPath)))
+    .orderBy(images.positionPct);
+
+  // Collapse duplicate rows caused by multiple findings per image
+  const seen = new Map<number, {
+    id: number;
+    imageUrl: string;
+    thumbnailPath: string | null;
+    positionPct: number | null;
+    visionResponse: string | null;
+    hasFindings: boolean;
+  }>();
+  for (const row of rows) {
+    const existing = seen.get(row.id);
+    if (existing) {
+      existing.hasFindings = existing.hasFindings || row.findingId !== null;
+    } else {
+      seen.set(row.id, {
+        id: row.id,
+        imageUrl: row.imageUrl,
+        thumbnailPath: row.thumbnailPath,
+        positionPct: row.positionPct,
+        visionResponse: row.visionResponse,
+        hasFindings: row.findingId !== null,
+      });
+    }
+  }
+  return Array.from(seen.values());
 }
 
 export async function recordOutcome(
