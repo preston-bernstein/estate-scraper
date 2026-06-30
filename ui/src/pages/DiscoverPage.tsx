@@ -6,6 +6,7 @@ import { cached } from "../lib/cache";
 import { CategoryStrip, type Category } from "../components/CategoryStrip";
 import { StandoutScroll } from "../components/StandoutScroll";
 import { RankedSaleCard } from "../components/RankedSaleCard";
+import { EmptyState } from "../components/EmptyState";
 import type { RankedSale } from "../types";
 
 function totalCounts(sales: RankedSale[]): Record<Category, number> {
@@ -37,6 +38,20 @@ function DiscoverContent() {
 
   const counts = totalCounts(data.rankedSales);
   const filtered = filterByCategory(data.rankedSales, category);
+
+  // Nothing scanned into the upcoming window yet — explain the state instead of an
+  // ambiguous blank, and point to the always-available Browse view.
+  if (data.rankedSales.length === 0 && data.standouts.length === 0) {
+    return (
+      <EmptyState
+        icon="🔭"
+        title="No finds in upcoming sales yet"
+        description="Discover highlights items from sales that haven't ended. The weekly scan runs Wednesday–Friday mornings — check back after the next run, or browse everything in the meantime."
+        actionLabel="Browse all items"
+        actionTo="/browse"
+      />
+    );
+  }
 
   const standouts =
     category === "all"

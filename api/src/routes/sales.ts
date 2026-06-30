@@ -6,6 +6,8 @@ import {
   getLastScannedAt,
   getOutcome,
   getSaleDetail,
+  listAllItems,
+  listAllSales,
   listPastSales,
   listUpcomingSales,
   recordOutcome,
@@ -24,6 +26,13 @@ salesRoutes.get("/history", async (c) => {
   const ownerSub = c.get("userSub");
   const result = await listPastSales(ownerSub);
   return c.json(result);
+});
+
+// Ungated: every sale, no date/Hunt filter. Registered before "/:id" so it isn't
+// captured as a sale id.
+salesRoutes.get("/all", async (c) => {
+  const ownerSub = c.get("userSub");
+  return c.json(await listAllSales(ownerSub));
 });
 
 salesRoutes.get("/:id", async (c) => {
@@ -61,6 +70,11 @@ salesRoutes.post("/:id/outcome", async (c) => {
 });
 
 export const findingsRoutes = new Hono<AppEnv>();
+
+// Flat feed of every flagged item across all sales — the "all images" grid.
+findingsRoutes.get("/all", async (c) => {
+  return c.json(await listAllItems());
+});
 
 findingsRoutes.get("/", async (c) => {
   const q = c.req.query("q") ?? "";

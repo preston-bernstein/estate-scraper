@@ -87,10 +87,6 @@ export async function buildSaleSummary(
 
 export async function listUpcomingSales(ownerSub: string) {
   const userHunts = await getUserHunts(ownerSub);
-  if (userHunts.length === 0) {
-    return { sales: [], noHunts: true as const };
-  }
-
   const today = todayIsoDate();
   const upcomingSales = await db
     .select()
@@ -104,21 +100,19 @@ export async function listUpcomingSales(ownerSub: string) {
 
   for (const sale of upcomingSales) {
     const saleFindings = findingsMap.get(sale.saleId) ?? [];
-    if (!saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
+    // With Hunts, filter to matches; with none, show everything (noHunts flagged so
+    // the UI can prompt to create Hunts without hiding the sales).
+    if (userHunts.length > 0 && !saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
       continue;
     }
     summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
   }
 
-  return { sales: summaries, noHunts: false as const };
+  return { sales: summaries, noHunts: userHunts.length === 0 };
 }
 
 export async function listPastSales(ownerSub: string) {
   const userHunts = await getUserHunts(ownerSub);
-  if (userHunts.length === 0) {
-    return { sales: [], noHunts: true as const };
-  }
-
   const today = todayIsoDate();
   const pastSales = await db
     .select()
@@ -132,13 +126,52 @@ export async function listPastSales(ownerSub: string) {
 
   for (const sale of pastSales) {
     const saleFindings = findingsMap.get(sale.saleId) ?? [];
-    if (!saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
+    if (userHunts.length > 0 && !saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
       continue;
     }
     summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
   }
 
-  return { sales: summaries, noHunts: false as const };
+  return { sales: summaries, noHunts: userHunts.length === 0 };
+}
+
+// Every sale, no date or Hunt filter — the ungated "see everything" browse. Hunt
+// match counts are still annotated when the user has Hunts, but nothing is hidden.
+export async function listAllSales(ownerSub: string) {
+  const userHunts = await getUserHunts(ownerSub);
+  const allSales = await db
+    .select()
+    .from(sales)
+    .orderBy(desc(sales.endDate), sales.distanceMiles);
+
+  const saleIds = allSales.map((s) => s.saleId);
+  const findingsMap = await getFindingsForSales(saleIds);
+  const summaries = [];
+  for (const sale of allSales) {
+    summaries.push(await buildSaleSummary(sale, userHunts, findingsMap.get(sale.saleId) ?? []));
+  }
+  return { sales: summaries, noHunts: userHunts.length === 0 };
+}
+
+// A flat feed of every flagged item (Finding) across all sales — the "all images"
+// grid. Newest first, capped so the grid stays responsive.
+export async function listAllItems(limit = 600) {
+  const rows = await db
+    .select({
+      id: findings.id,
+      saleId: findings.saleId,
+      imageUrl: findings.imageUrl,
+      description: findings.description,
+      confidence: findings.confidence,
+      saleTitle: sales.title,
+      distanceMiles: sales.distanceMiles,
+      endDate: sales.endDate,
+    })
+    .from(findings)
+    .innerJoin(sales, eq(findings.saleId, sales.saleId))
+    .orderBy(desc(findings.id))
+    .limit(limit);
+  return { items: rows };
 }
 
 export async function getSaleDetail(ownerSub: string, saleId: string) {

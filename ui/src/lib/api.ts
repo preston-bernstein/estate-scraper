@@ -1,4 +1,5 @@
 import type {
+  AllItem,
   DiscoverResponse,
   Finding,
   FindingWithSale,
@@ -45,6 +46,9 @@ export const api = {
   getStatus: () => request<StatusResponse>("/api/status"),
   getSales: () =>
     request<{ sales: SaleSummary[]; noHunts: boolean }>("/api/sales"),
+  getAllSales: () =>
+    request<{ sales: SaleSummary[]; noHunts: boolean }>("/api/sales/all"),
+  getAllItems: () => request<{ items: AllItem[] }>("/api/findings/all"),
   getHistory: () =>
     request<{ sales: SaleSummary[]; noHunts: boolean }>("/api/sales/history"),
   getSale: (id: string) =>

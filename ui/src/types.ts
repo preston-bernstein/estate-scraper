@@ -67,6 +67,17 @@ export type SettingsResponse = {
   radiusMiles: number;
 };
 
+export type AllItem = {
+  id: number;
+  saleId: string;
+  imageUrl: string;
+  description: string;
+  confidence: string | null;
+  saleTitle: string;
+  distanceMiles: number;
+  endDate: string;
+};
+
 export type DiscoverFinding = {
   id: number;
   imageUrl: string;
