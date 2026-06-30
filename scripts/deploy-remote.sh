@@ -22,16 +22,18 @@ rsync -az --delete \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
   --exclude='*.db' \
+  --exclude='.env' \
   -e "ssh -i $SSH_KEY" \
   "$ROOT/" "$REMOTE:/tmp/estate-deploy/"
 
 echo "==> Installing + restarting on server..."
+DEPLOY_HOME="/home/$DEPLOY_USER"
 $SSH $REMOTE "
   set -e
-  sudo rsync -a --exclude='data' --exclude='node_modules' /tmp/estate-deploy/ ~/estate-scraper/
-  sudo chown -R $DEPLOY_USER:$DEPLOY_USER ~/estate-scraper
+  sudo rsync -a --exclude='data' --exclude='node_modules' /tmp/estate-deploy/ $DEPLOY_HOME/estate-scraper/
+  sudo chown -R $DEPLOY_USER:$DEPLOY_USER $DEPLOY_HOME/estate-scraper
   PUID=\$(id -u $DEPLOY_USER)
-  sudo -u $DEPLOY_USER bash -c 'export NVM_DIR=\"\$HOME/.nvm\" && . \"\$NVM_DIR/nvm.sh\" && cd ~/estate-scraper && npm install --silent'
+  sudo -u $DEPLOY_USER bash -c 'cd $DEPLOY_HOME/estate-scraper && npm install --silent'
   sudo -u $DEPLOY_USER XDG_RUNTIME_DIR=/run/user/\$PUID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$PUID/bus systemctl --user restart estate-scraper
   sleep 2
   sudo -u $DEPLOY_USER XDG_RUNTIME_DIR=/run/user/\$PUID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$PUID/bus systemctl --user is-active estate-scraper
