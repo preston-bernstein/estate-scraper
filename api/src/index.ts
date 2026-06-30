@@ -25,7 +25,11 @@ app.use("/api/*", authMiddleware);
 app.route("/thumbs", thumbsRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));
-app.get("/api/me", (c) => c.json({ sub: c.get("userSub") }));
+const SCAN_OWNER_SUB = process.env.SCAN_OWNER_SUB ?? "";
+app.get("/api/me", (c) => {
+  const sub = c.get("userSub");
+  return c.json({ sub, canTriggerScan: Boolean(SCAN_OWNER_SUB && sub === SCAN_OWNER_SUB) });
+});
 app.route("/api/sales", salesRoutes);
 app.route("/api/hunts", huntRoutes);
 app.route("/api/settings", settingsRoutes);

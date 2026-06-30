@@ -79,6 +79,12 @@ function RunScanButton({ onStart }: { onStart: () => void }) {
   );
 }
 
+function ScanButtonGated({ onStart }: { onStart: () => void }) {
+  const me = use(cached("me", api.getMe));
+  if (!me.canTriggerScan) return null;
+  return <RunScanButton onStart={onStart} />;
+}
+
 export function Layout() {
   const [showScanCard, setShowScanCard] = useState(false);
 
@@ -103,7 +109,11 @@ export function Layout() {
                 </Suspense>
               </ErrorBoundary>
             </div>
-            <RunScanButton onStart={() => setShowScanCard(true)} />
+            <ErrorBoundary fallback={() => null}>
+              <Suspense fallback={null}>
+                <ScanButtonGated onStart={() => setShowScanCard(true)} />
+              </Suspense>
+            </ErrorBoundary>
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">

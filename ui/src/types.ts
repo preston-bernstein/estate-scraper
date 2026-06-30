@@ -51,6 +51,7 @@ export type StatusResponse = {
 
 export type MeResponse = {
   sub: string;
+  canTriggerScan: boolean;
 };
 
 export type FindingWithSale = {

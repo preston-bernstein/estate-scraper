@@ -128,7 +128,12 @@ statusRoutes.get("/", async (c) => {
 
 export const scanRoutes = new Hono<AppEnv>();
 
+const SCAN_OWNER_SUB = process.env.SCAN_OWNER_SUB ?? "";
+
 scanRoutes.post("/start", async (c) => {
+  if (!SCAN_OWNER_SUB || c.get("userSub") !== SCAN_OWNER_SUB) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   const result = startScan();
   return c.json(result, result.started ? 200 : 409);
 });

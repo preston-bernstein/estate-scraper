@@ -44,7 +44,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getMe: () => request<{ sub: string }>("/api/me"),
+  getMe: () => request<{ sub: string; canTriggerScan: boolean }>("/api/me"),
   getStatus: () => request<StatusResponse>("/api/status"),
   getSales: () =>
     request<{ sales: SaleSummary[]; noHunts: boolean }>("/api/sales"),
