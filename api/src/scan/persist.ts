@@ -37,7 +37,9 @@ function itemRowsFor(
   }));
 }
 
-async function insertFindingItems(
+// Synchronous: runs inside a better-sqlite3 transaction, which rejects any callback
+// that returns a promise. Use .run() rather than awaiting the query builder.
+function insertFindingItems(
   tx: Tx,
   findingId: number,
   saleId: string,
@@ -45,14 +47,18 @@ async function insertFindingItems(
   confidence: Confidence | null,
   vlmModel: string | null,
   promptVersion: string | null,
-): Promise<void> {
+): void {
   const drafts = extractItems({ description, confidence });
   if (drafts.length === 0) return;
-  await tx.insert(findingItems).values(itemRowsFor(findingId, saleId, drafts, vlmModel, promptVersion));
+  tx.insert(findingItems).values(itemRowsFor(findingId, saleId, drafts, vlmModel, promptVersion)).run();
 }
 
+// Skip-set for incremental scans: every photo already ANALYZED, sourced from the
+// images table (winners AND junk), not just findings. Sourcing from findings would
+// re-analyze every no-finding image on each run — defeating multi-night incremental
+// scans where each night should only process newly posted images.
 export async function getProcessedImageUrls(): Promise<Set<string>> {
-  const rows = await db.select({ imageUrl: findings.imageUrl }).from(findings);
+  const rows = await db.select({ imageUrl: images.imageUrl }).from(images);
   return new Set(rows.map((row) => row.imageUrl));
 }
 
@@ -60,21 +66,19 @@ export async function getProcessedImageUrls(): Promise<Set<string>> {
 // UNIQUE(sale_id, image_url) gives scan idempotency: a re-scanned sale links to the
 // existing row instead of duplicating it. embedding/phash/thumbnail are filled by the
 // vision pipeline (TODO) — null here keeps existing behavior non-breaking.
-async function upsertImage(
+function upsertImage(
   tx: Tx,
   saleId: string,
   imageUrl: string,
   positionPct: number | null,
-): Promise<number> {
-  await tx
-    .insert(images)
-    .values({ saleId, imageUrl, positionPct })
-    .onConflictDoNothing();
-  const [row] = await tx
+): number {
+  tx.insert(images).values({ saleId, imageUrl, positionPct }).onConflictDoNothing().run();
+  const row = tx
     .select({ id: images.id })
     .from(images)
-    .where(and(eq(images.saleId, saleId), eq(images.imageUrl, imageUrl)));
-  return row.id;
+    .where(and(eq(images.saleId, saleId), eq(images.imageUrl, imageUrl)))
+    .get();
+  return row!.id;
 }
 
 export async function upsertSale(sale: ScrapedSale, scrapedAt: string) {
@@ -135,15 +139,16 @@ export async function insertFinding(
   description: string,
   scrapedAt: string,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const imageId = await upsertImage(tx, saleId, imageUrl, null);
-    const [inserted] = await tx
+  db.transaction((tx) => {
+    const imageId = upsertImage(tx, saleId, imageUrl, null);
+    const inserted = tx
       .insert(findings)
       .values({ saleId, imageId, imageUrl, description, scrapedAt })
       .onConflictDoNothing()
-      .returning({ id: findings.id });
+      .returning({ id: findings.id })
+      .get();
     // Legacy import path: no model/confidence known, so items get null provenance.
-    if (inserted) await insertFindingItems(tx, inserted.id, saleId, description, null, null, null);
+    if (inserted) insertFindingItems(tx, inserted.id, saleId, description, null, null, null);
   });
 }
 
@@ -159,10 +164,10 @@ export async function insertFindingsBatch(
 ): Promise<void> {
   if (batch.length === 0) return;
   const vlmModel = activeVlmModel();
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     for (const f of batch) {
-      const imageId = await upsertImage(tx, saleId, f.imageUrl, f.imagePositionPct);
-      const [inserted] = await tx
+      const imageId = upsertImage(tx, saleId, f.imageUrl, f.imagePositionPct);
+      const inserted = tx
         .insert(findings)
         .values({
           saleId,
@@ -176,11 +181,12 @@ export async function insertFindingsBatch(
           promptVersion: PROMPT_VERSION,
         })
         .onConflictDoNothing()
-        .returning({ id: findings.id });
+        .returning({ id: findings.id })
+        .get();
       // Only new findings get items — onConflictDoNothing returns nothing on re-scan,
       // so item generation stays idempotent across scans.
       if (inserted) {
-        await insertFindingItems(
+        insertFindingItems(
           tx,
           inserted.id,
           saleId,
@@ -208,9 +214,9 @@ export async function upsertAnalyzedImages(
   }>,
 ): Promise<void> {
   if (imgs.length === 0) return;
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     for (const img of imgs) {
-      await tx
+      tx
         .insert(images)
         .values({
           saleId,
@@ -228,7 +234,8 @@ export async function upsertAnalyzedImages(
             positionPct: sql`coalesce(excluded.position_pct, ${images.positionPct})`,
             thumbnailPath: sql`coalesce(excluded.thumbnail_path, ${images.thumbnailPath})`,
           },
-        });
+        })
+        .run();
     }
   });
 }
