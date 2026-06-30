@@ -2,15 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { X, ChevronDown, ChevronUp, Zap } from "lucide-react";
 import { useScanStream, type SaleProgress } from "../hooks/useScanStream";
 
-function ScoreStars({ score }: { score: number }) {
-  const filled = Math.round(score);
-  return (
-    <span className="text-amber-400 text-xs tracking-tighter">
-      {"★".repeat(filled)}{"☆".repeat(5 - filled)}
-    </span>
-  );
-}
-
 function SaleRow({ sale }: { sale: SaleProgress }) {
   const pct = sale.totalImages > 0 ? Math.round((sale.done / sale.totalImages) * 100) : 0;
   const isActive = sale.status === "analyzing";
@@ -45,9 +36,7 @@ function SaleRow({ sale }: { sale: SaleProgress }) {
           {isDone && (
             <p className="text-[10px] text-zinc-400">
               {sale.findings} finding{sale.findings !== 1 ? "s" : ""}
-              {sale.score !== undefined && (
-                <> · <ScoreStars score={sale.score} /> {sale.score.toFixed(1)}</>
-              )}
+              {sale.score !== undefined && <> · score {sale.score.toFixed(1)}</>}
               {sale.oracleRequested && " · oracle ⚡"}
             </p>
           )}
