@@ -1,10 +1,55 @@
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { findings, images, sales, userSettings } from "../db/schema.js";
+import { findingItems, findings, images, sales, userSettings } from "../db/schema.js";
+import { extractItems, type ItemDraft } from "../lib/items.js";
 import { DEFAULT_RADIUS_MILES } from "../lib/scraping.js";
+import { PROMPT_VERSION, activeVlmModel } from "../lib/vision.js";
 import type { AnalysisPhase, Confidence } from "../vision/index.js";
 import type { ScrapedSale } from "../scraper/index.js";
 import { DEV_USER_SUB } from "../types/env.js";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Build finding_items rows for one finding, stamped with the generator provenance
+// (ADR 0016). Shared by the live scan path and the backfill so both produce
+// identical rows. The lexicon is the sole authority for `maker` (ADR 0014).
+function itemRowsFor(
+  findingId: number,
+  saleId: string,
+  drafts: ItemDraft[],
+  vlmModel: string | null,
+  promptVersion: string | null,
+) {
+  return drafts.map((d) => ({
+    findingId,
+    saleId,
+    maker: d.maker,
+    makerRaw: d.makerRaw,
+    category: d.category,
+    era: d.era,
+    desirability: d.desirability,
+    matchedLexicon: d.matchedLexicon,
+    itemDesc: d.itemDesc,
+    source: d.source,
+    idConfidence: d.idConfidence,
+    vlmModel,
+    promptVersion,
+  }));
+}
+
+async function insertFindingItems(
+  tx: Tx,
+  findingId: number,
+  saleId: string,
+  description: string,
+  confidence: Confidence | null,
+  vlmModel: string | null,
+  promptVersion: string | null,
+): Promise<void> {
+  const drafts = extractItems({ description, confidence });
+  if (drafts.length === 0) return;
+  await tx.insert(findingItems).values(itemRowsFor(findingId, saleId, drafts, vlmModel, promptVersion));
+}
 
 export async function getProcessedImageUrls(): Promise<Set<string>> {
   const rows = await db.select({ imageUrl: findings.imageUrl }).from(findings);
@@ -15,8 +60,6 @@ export async function getProcessedImageUrls(): Promise<Set<string>> {
 // UNIQUE(sale_id, image_url) gives scan idempotency: a re-scanned sale links to the
 // existing row instead of duplicating it. embedding/phash/thumbnail are filled by the
 // vision pipeline (TODO) — null here keeps existing behavior non-breaking.
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 async function upsertImage(
   tx: Tx,
   saleId: string,
@@ -94,10 +137,13 @@ export async function insertFinding(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const imageId = await upsertImage(tx, saleId, imageUrl, null);
-    await tx
+    const [inserted] = await tx
       .insert(findings)
       .values({ saleId, imageId, imageUrl, description, scrapedAt })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: findings.id });
+    // Legacy import path: no model/confidence known, so items get null provenance.
+    if (inserted) await insertFindingItems(tx, inserted.id, saleId, description, null, null, null);
   });
 }
 
@@ -112,10 +158,11 @@ export async function insertFindingsBatch(
   scrapedAt: string,
 ): Promise<void> {
   if (batch.length === 0) return;
+  const vlmModel = activeVlmModel();
   await db.transaction(async (tx) => {
     for (const f of batch) {
       const imageId = await upsertImage(tx, saleId, f.imageUrl, f.imagePositionPct);
-      await tx
+      const [inserted] = await tx
         .insert(findings)
         .values({
           saleId,
@@ -125,8 +172,24 @@ export async function insertFindingsBatch(
           scrapedAt,
           confidence: f.confidence,
           imagePositionPct: f.imagePositionPct,
+          vlmModel,
+          promptVersion: PROMPT_VERSION,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: findings.id });
+      // Only new findings get items — onConflictDoNothing returns nothing on re-scan,
+      // so item generation stays idempotent across scans.
+      if (inserted) {
+        await insertFindingItems(
+          tx,
+          inserted.id,
+          saleId,
+          f.description,
+          f.confidence,
+          vlmModel,
+          PROMPT_VERSION,
+        );
+      }
     }
   });
 }
@@ -217,6 +280,42 @@ export async function markBoilerplateImages(minSales = 5): Promise<void> {
       )
     )
   `);
+}
+
+// Generate finding_items for every finding that has none yet — for the pre-items
+// backfill and for re-mining after the lexicon grows (drop the rows, re-run). Reuses
+// each finding's own persisted provenance so backfilled items carry the right stamps.
+export async function backfillFindingItems(): Promise<{ findings: number; items: number }> {
+  const withItems = new Set(
+    (await db.selectDistinct({ id: findingItems.findingId }).from(findingItems)).map((r) => r.id),
+  );
+  const all = await db
+    .select({
+      id: findings.id,
+      saleId: findings.saleId,
+      description: findings.description,
+      confidence: findings.confidence,
+      vlmModel: findings.vlmModel,
+      promptVersion: findings.promptVersion,
+    })
+    .from(findings);
+
+  let findingCount = 0;
+  let itemCount = 0;
+  for (const f of all) {
+    if (withItems.has(f.id)) continue;
+    const drafts = extractItems({
+      description: f.description,
+      confidence: f.confidence as Confidence | null,
+    });
+    if (drafts.length === 0) continue;
+    await db
+      .insert(findingItems)
+      .values(itemRowsFor(f.id, f.saleId, drafts, f.vlmModel, f.promptVersion));
+    findingCount++;
+    itemCount += drafts.length;
+  }
+  return { findings: findingCount, items: itemCount };
 }
 
 export async function getScanRadiusMiles(): Promise<number> {

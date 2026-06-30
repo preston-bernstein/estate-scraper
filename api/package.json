@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "start": "NODE_ENV=production node dist/index.js",
     "scan": "tsx src/scan/index.ts",
+    "backfill:items": "tsx src/scan/backfill-items.ts",
     "import": "tsx src/import/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

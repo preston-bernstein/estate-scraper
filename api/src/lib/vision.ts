@@ -1,5 +1,15 @@
 export const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://localhost:11436";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
+
+// Generator provenance (ADR 0016). Bump PROMPT_VERSION whenever VISION_USER_PROMPT
+// or VISION_SYSTEM_PROMPT changes meaning, so findings/items carry the seam.
+export const PROMPT_VERSION = "enriched-v1";
+
+// The VLM that actually ran: RunPod model when the serverless backend is configured,
+// otherwise the local Ollama model. Stamped on findings + finding_items.
+export function activeVlmModel(): string {
+  return process.env.RUNPOD_ENDPOINT_ID ? RUNPOD_MODEL : OLLAMA_MODEL;
+}
 export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
 export const PHASH_HAMMING_THRESHOLD = 10;
