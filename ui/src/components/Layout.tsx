@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { use, Suspense } from "react";
 import { LogOut } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { api } from "../lib/api";
 import { cached } from "../lib/cache";
 import { useAuth } from "../context/AuthContext";
@@ -9,6 +10,7 @@ import { formatLastScanned } from "../lib/format";
 
 const tabs = [
   { to: "/", label: "Discover", end: true },
+  { to: "/browse", label: "Browse", end: false },
   { to: "/plan", label: "Plan", end: false },
   { to: "/hunts", label: "Hunts", end: false },
   { to: "/history", label: "History", end: false },
@@ -54,9 +56,12 @@ export function Layout() {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div>
             <p className="text-base font-semibold tracking-tight">Estate Sales</p>
-            <Suspense fallback={<p className="text-xs text-zinc-400">Loading…</p>}>
-              <ScanStatus />
-            </Suspense>
+            {/* Status is non-critical — if it fails, stay quiet rather than crash the shell. */}
+            <ErrorBoundary fallback={() => <span className="text-xs text-zinc-400">Status unavailable</span>}>
+              <Suspense fallback={<p className="text-xs text-zinc-400">Loading…</p>}>
+                <ScanStatus />
+              </Suspense>
+            </ErrorBoundary>
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
@@ -83,7 +88,10 @@ export function Layout() {
       </header>
 
       <main className="mx-auto max-w-3xl pb-24 md:pb-6">
-        <Outlet />
+        {/* Page-level boundary: a failed page shows a retry UI; the nav/shell stays. */}
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       {/* Mobile bottom nav */}

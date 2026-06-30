@@ -12,7 +12,8 @@
     "start": "npm run start -w api",
     "scan": "npm run scan -w api",
     "import": "npm run import -w api",
-    "test": "npm run test -w api",
+    "test": "npm run test -w api -w ui",
+    "test:e2e": "npm run test:e2e -w ui",
     "test:watch": "npm run test:watch -w api",
     "eval": "npm run eval -w api"
   },
