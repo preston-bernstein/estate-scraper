@@ -69,6 +69,10 @@ export const findings = sqliteTable("findings", {
 }, (t) => ({
   idxSaleId: index("idx_findings_sale_id").on(t.saleId),
   idxImageId: index("idx_findings_image_id").on(t.imageId),
+  // One finding per flagged image per sale — makes insertFindingsBatch's
+  // onConflictDoNothing a real guard against duplicate findings/items, beyond the
+  // upstream skip-set (matches the images table's idempotency).
+  uniqSaleImageUrl: unique("uniq_findings_sale_image_url").on(t.saleId, t.imageUrl),
 }));
 
 // One identified object within a Finding (ADR 0011, 0014). One Finding (image) → many Items.

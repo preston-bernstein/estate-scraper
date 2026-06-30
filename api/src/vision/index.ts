@@ -24,6 +24,7 @@ import {
   TAIL_SAMPLE_PCT_START,
 } from "../lib/sampling.js";
 import { fetchBuffer } from "../lib/http.js";
+import { writeThumbnail } from "../lib/thumbnails.js";
 import type { ScrapedSale } from "../scraper/index.js";
 
 export type AnalysisPhase = "FULL" | "TAIL_PROBE" | "EARLY_STOP";
@@ -86,6 +87,18 @@ export type VisionEvent =
       saleScore: number;
     }
   | {
+      // Every analyzed photo (winners AND junk) — the durable corpus row (ADR 0014).
+      // phash is the dedup fingerprint computed in stage 1; positionPct is where the
+      // photo sat in the listing. Persisted to the images table; junk rows are the
+      // negative exemplars the taste ranker trains on. Not emitted in reference mode.
+      type: "analyzed_image";
+      saleId: string;
+      imageUrl: string;
+      phash: string | null;
+      positionPct: number;
+      thumbnailPath: string | null;
+    }
+  | {
       // Reference mode only — one event per analyzed image, including NOTHING
       // responses. This is the raw material for the frozen reference pass that
       // recall@K is measured against (ADR 0010). Never emitted in normal scans.
@@ -106,6 +119,7 @@ type ImageResult = {
   response: string;
   error: string;
   durationS: number;
+  thumbnailPath: string | null;
 };
 
 type TaggedResult = ImageResult & { positionIndex: number };
@@ -171,6 +185,27 @@ export function scoreResponse(response: string): number {
     const c = extractLineConfidence(line);
     return sum + (c === "high" ? 1.0 : c === "medium" ? 0.5 : c === "low" ? 0.15 : 0.5);
   }, 0);
+}
+
+// Emit one analyzed_image event per processed photo so the scan persists the full
+// corpus row (phash + position), not just the flagged findings. Errored images are
+// still real photos in the listing, so they're persisted too.
+function* emitAnalyzed(
+  saleId: string,
+  tagged: TaggedResult[],
+  total: number,
+  phashByUrl: Map<string, string | null>,
+): Generator<VisionEvent> {
+  for (const r of tagged) {
+    yield {
+      type: "analyzed_image",
+      saleId,
+      imageUrl: r.url,
+      phash: phashByUrl.get(r.url) ?? null,
+      positionPct: r.positionIndex / Math.max(total - 1, 1),
+      thumbnailPath: r.thumbnailPath,
+    };
+  }
 }
 
 function sampleK<T>(arr: T[], k: number): T[] {
@@ -359,11 +394,23 @@ async function processImage(
   preloadedBuffer?: Buffer,
 ): Promise<ImageResult> {
   const started = performance.now();
-  const result: ImageResult = { url, saleId, response: "", error: "", durationS: 0 };
+  const result: ImageResult = {
+    url,
+    saleId,
+    response: "",
+    error: "",
+    durationS: 0,
+    thumbnailPath: null,
+  };
 
   try {
     const buffer = preloadedBuffer ?? (await fetchBuffer(url));
     if (!buffer) throw new Error("image download failed");
+
+    // Durable thumbnail for every analyzed photo (ADR 0013) — written before the
+    // quality gate so even gated-out junk is preserved as a negative exemplar and
+    // stays re-embeddable. Fail-open: null path just means the row gets no thumbnail.
+    result.thumbnailPath = await writeThumbnail(saleId, url, buffer);
 
     if (!(await passesQualityGate(buffer))) {
       // Quality gate filtered — return empty response (not an error)
@@ -467,6 +514,7 @@ export async function* processSalesStream(
     // All images downloaded upfront so pHash can compare across the full set;
     // adaptive sampling phases reuse the cached buffers without re-downloading.
     const seenHashes: bigint[] = [];
+    const phashByUrl = new Map<string, string | null>();
     const deduped = await mapPool(candidateUrls, PREFILTER_WORKERS, async (url) => {
       const buffer = await fetchBuffer(url);
       if (!buffer) return null;
@@ -476,8 +524,10 @@ export async function* processSalesStream(
           return null; // near-duplicate
         }
         seenHashes.push(hash);
+        phashByUrl.set(url, hash.toString(16).padStart(16, "0"));
       } catch {
-        // pHash failed — keep the image
+        // pHash failed — keep the image, leave phash null
+        phashByUrl.set(url, null);
       }
       return { url, buffer };
     });
@@ -615,6 +665,7 @@ export async function* processSalesStream(
           imagesAnalyzed,
           totalImages: total,
         };
+        yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
         yield {
           type: "sale_done",
           saleId: sale.saleId,
@@ -647,6 +698,7 @@ export async function* processSalesStream(
         // Nothing in lead AND tail — skip this sale
         analysisPhase = "EARLY_STOP";
         const imagesAnalyzed = leadCount + tailResults.length;
+        allTagged.push(...tailTagged); // capture tail-probe photos for the corpus
         yield {
           type: "sale_skip",
           saleId: sale.saleId,
@@ -655,6 +707,7 @@ export async function* processSalesStream(
           imagesAnalyzed,
           totalImages: total,
         };
+        yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
         yield {
           type: "sale_done",
           saleId: sale.saleId,
@@ -764,6 +817,7 @@ export async function* processSalesStream(
       };
     }
 
+    yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
     yield {
       type: "sale_done",
       saleId: sale.saleId,

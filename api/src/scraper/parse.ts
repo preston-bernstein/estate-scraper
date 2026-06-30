@@ -73,13 +73,23 @@ export function parseSaleDetail(html: string, url: string): SaleDetail | null {
 
   const startDate = isoDateOnly(firstMatch(html, /"startDate":"([^"]+)"/));
   const endDate = isoDateOnly(firstMatch(html, /"endDate":"([^"]+)"/));
-  const address = firstMatch(html, /"addressLine1":"([^"]+)"/);
-  const city = firstMatch(html, /"addressLocality":"([^"]+)"/);
-  const state = firstMatch(html, /"addressRegion":"([^"]+)"/);
-  const zip = firstMatch(html, /"postalCode":"([^"]+)"/);
+  // Street is frequently withheld until near the sale (addressLine1 present but ""),
+  // so it's optional — city/state/zip are enough to geocode to a zip centroid and
+  // radius-filter. Requiring the street silently dropped every street-less sale.
+  const address = firstMatch(html, /"addressLine1":"([^"]*)"/) ?? "";
 
-  if (!startDate || !endDate || !address || !city || !state || !zip) {
-    const missing = { startDate, endDate, address, city, state, zip };
+  // Location: prefer the embedded JSON, fall back to the listing URL, which always
+  // encodes /STATE/City-Slug/ZIP/saleId. Some listings omit the structured address
+  // block entirely; the URL still locates them well enough to geocode + radius-filter.
+  const urlLoc = /\/([A-Z]{2})\/([^/]+)\/(\d{5})\/\d+\/?$/.exec(url);
+  const city =
+    firstMatch(html, /"addressLocality":"([^"]+)"/) ??
+    (urlLoc ? urlLoc[2]!.replace(/-/g, " ") : null);
+  const state = firstMatch(html, /"addressRegion":"([^"]+)"/) ?? urlLoc?.[1] ?? null;
+  const zip = firstMatch(html, /"postalCode":"([^"]+)"/) ?? urlLoc?.[3] ?? null;
+
+  if (!startDate || !endDate || !city || !state || !zip) {
+    const missing = { startDate, endDate, city, state, zip };
     const absent = Object.entries(missing)
       .filter(([, v]) => !v)
       .map(([k]) => k);
