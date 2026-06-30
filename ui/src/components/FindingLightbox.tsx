@@ -66,7 +66,7 @@ export function FindingLightbox({
     >
       <button
         type="button"
-        className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-white"
+        className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-sm text-white backdrop-blur-sm hover:bg-white/20 active:scale-95 transition-all duration-100"
         onClick={onClose}
       >
         Close
@@ -75,7 +75,7 @@ export function FindingLightbox({
       {index > 0 ? (
         <button
           type="button"
-          className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-2 text-2xl text-white md:left-4"
+          className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-3 text-2xl text-white backdrop-blur-sm hover:bg-white/20 active:scale-95 transition-all duration-100 md:left-4"
           onClick={(event) => {
             event.stopPropagation();
             onChangeIndex(index - 1);
@@ -89,7 +89,7 @@ export function FindingLightbox({
       {index < findings.length - 1 ? (
         <button
           type="button"
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-2 text-2xl text-white md:right-4"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-3 text-2xl text-white backdrop-blur-sm hover:bg-white/20 active:scale-95 transition-all duration-100 md:right-4"
           onClick={(event) => {
             event.stopPropagation();
             onChangeIndex(index + 1);

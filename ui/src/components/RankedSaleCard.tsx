@@ -40,13 +40,13 @@ export function RankedSaleCard({ sale, rank, filter }: Props) {
   const hasKitsch = sale.tally.kitsch > 0;
 
   return (
-    <article className="border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+    <article className="bg-white dark:bg-zinc-900 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow duration-200 border border-zinc-100 dark:border-zinc-800/60">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-mono text-zinc-400 shrink-0">#{rank}</span>
           <Link
             to={`/sales/${sale.saleId}`}
-            className="font-semibold text-zinc-900 dark:text-zinc-50 hover:underline truncate"
+            className="font-semibold text-zinc-900 dark:text-zinc-50 hover:text-blue-500 dark:hover:text-blue-400 transition-colors truncate"
           >
             {sale.title}
           </Link>
@@ -80,12 +80,12 @@ export function RankedSaleCard({ sale, rank, filter }: Props) {
       {displayed.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mb-3">
           {displayed.map((f) => (
-            <div key={f.id} className="flex-none w-24">
+            <div key={f.id} className="group/thumb flex-none w-24">
               <div className="aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 relative mb-1">
                 <ResilientImage
                   srcs={[f.thumbUrl, f.imageUrl]}
                   alt={f.description}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                 />
                 <span
                   className={cn(
@@ -108,7 +108,7 @@ export function RankedSaleCard({ sale, rank, filter }: Props) {
         <p className="text-xs text-zinc-400">{sale.city}, {sale.state}</p>
         <Link
           to={`/sales/${sale.saleId}`}
-          className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium"
+          className="text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors duration-150"
         >
           View sale →
         </Link>

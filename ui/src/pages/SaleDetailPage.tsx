@@ -268,19 +268,21 @@ export function SaleDetailPage() {
             {visibleFindings.map((finding, index) => (
               <figure
                 key={finding.id}
-                className="cursor-pointer overflow-hidden rounded-xl bg-white shadow-sm"
+                className="group cursor-pointer overflow-hidden rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow duration-200 dark:bg-zinc-900"
               >
                 <button
                   type="button"
-                  className="block w-full text-left"
+                  className="block w-full text-left active:scale-[0.99] transition-transform duration-100"
                   onClick={() => setLightboxIndex(index)}
                 >
-                  <ResilientImage
-                    srcs={[finding.thumbUrl, finding.imageUrl]}
-                    alt={finding.description}
-                    className="aspect-square w-full object-cover"
-                  />
-                  <figcaption className="p-3 text-sm text-gray-700">
+                  <div className="overflow-hidden">
+                    <ResilientImage
+                      srcs={[finding.thumbUrl, finding.imageUrl]}
+                      alt={finding.description}
+                      className="aspect-square w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
+                  <figcaption className="p-3 text-sm text-gray-700 dark:text-zinc-300">
                     {finding.description}
                   </figcaption>
                 </button>

@@ -86,8 +86,8 @@ function SortablePlanItem({ sale, index, onRemove }: SortablePlanItemProps) {
           .filter(Boolean)
           .join(" "),
       }}
-      className={`group relative flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm ${
-        isDragging ? "z-10 opacity-90" : ""
+      className={`group relative flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm hover:shadow-md transition-shadow duration-200 dark:bg-zinc-900 ${
+        isDragging ? "z-10 opacity-90 shadow-lg" : ""
       }`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -125,7 +125,7 @@ function SortablePlanItem({ sale, index, onRemove }: SortablePlanItemProps) {
       <button
         type="button"
         onClick={() => onRemove(sale.saleId)}
-        className="rounded-full px-3 py-1 text-sm text-gray-500 opacity-100 transition hover:bg-gray-100 md:opacity-0 md:group-hover:opacity-100"
+        className="rounded-full px-3 py-1 text-sm text-gray-500 opacity-100 transition-all duration-150 hover:bg-red-50 hover:text-red-500 active:scale-95 dark:hover:bg-red-950/30 md:opacity-0 md:group-hover:opacity-100"
         aria-label="Remove from plan"
       >
         ×

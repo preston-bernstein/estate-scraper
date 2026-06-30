@@ -65,9 +65,9 @@ export function BrowsePage() {
             <button
               key={tab.id}
               onClick={() => setView(tab.id)}
-              className={`rounded-full px-3 py-1 text-sm transition-colors ${
+              className={`rounded-full px-3 py-1 text-sm transition-all duration-150 ease-out active:scale-95 ${
                 view === tab.id
-                  ? "bg-white shadow-sm dark:bg-zinc-700"
+                  ? "bg-white shadow-sm dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100"
                   : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
               }`}
             >
@@ -100,12 +100,12 @@ export function BrowsePage() {
               <Link
                 key={item.id}
                 to={`/sales/${item.saleId}`}
-                className="group overflow-hidden rounded-xl bg-white shadow-sm dark:bg-zinc-800"
+                className="group overflow-hidden rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow duration-200 dark:bg-zinc-800 active:scale-[0.98] transition-all"
               >
                 <ResilientImage
                   srcs={[item.thumbUrl, item.imageUrl]}
                   alt={item.description}
-                  className="aspect-square w-full object-cover"
+                  className="aspect-square w-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <p className="line-clamp-2 px-2 py-1.5 text-xs text-zinc-700 dark:text-zinc-300">
                   {item.description}

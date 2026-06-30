@@ -24,6 +24,12 @@ export function formatDateBadge(startDate: string): string {
     return "Today";
   }
 
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  if (start.getTime() === tomorrow.getTime()) {
+    return "Tomorrow";
+  }
+
   const day = start.getDay();
   if (day === 6) {
     return "Sat";

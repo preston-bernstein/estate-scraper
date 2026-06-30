@@ -25,10 +25,10 @@ export function CategoryStrip({ active, counts, onChange }: Props) {
           key={cat}
           onClick={() => onChange(cat)}
           className={cn(
-            "flex-none px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+            "flex-none px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ease-out whitespace-nowrap active:scale-95",
             active === cat
-              ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-              : "border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+              ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 scale-[1.02] shadow-sm"
+              : "border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/60",
           )}
         >
           {LABELS[cat]}

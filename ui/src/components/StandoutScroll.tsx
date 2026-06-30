@@ -24,7 +24,7 @@ export function StandoutScroll({ standouts }: Props) {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 mb-3">
         Standouts this week
       </h2>
       <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
@@ -32,9 +32,9 @@ export function StandoutScroll({ standouts }: Props) {
           <Link
             key={s.id}
             to={`/sales/${s.saleId}`}
-            className="flex-none w-44 group"
+            className="flex-none w-44 group active:scale-[0.97] transition-transform duration-100"
           >
-            <div className="aspect-square rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 mb-2 relative">
+            <div className="aspect-square rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 mb-2 relative shadow-sm group-hover:shadow-md transition-shadow duration-200">
               <ResilientImage
                 srcs={[s.thumbUrl, s.imageUrl]}
                 alt={s.description}

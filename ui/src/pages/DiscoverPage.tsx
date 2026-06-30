@@ -70,7 +70,7 @@ function DiscoverContent() {
         <p className="text-zinc-400 text-sm py-8 text-center">No sales found for this category.</p>
       ) : (
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
             {filtered.length} sale{filtered.length !== 1 ? "s" : ""} ranked by score
           </h2>
           {filtered.map((sale, i) => (
@@ -95,7 +95,7 @@ function SearchContent({ searchQuery }: { searchQuery: string }) {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
         {data.sales.length} sale{data.sales.length !== 1 ? "s" : ""} with findings for "{searchQuery}"
       </h2>
       {data.sales.map((sale, i) => (

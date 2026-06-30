@@ -71,7 +71,7 @@ function RunScanButton({ onStart }: { onStart: () => void }) {
       onClick={handleClick}
       disabled={busy}
       title="Run scan now"
-      className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+      className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-all duration-150 active:scale-95 disabled:opacity-50"
     >
       <ScanLine size={13} />
       {busy ? "Starting…" : "Scan"}
