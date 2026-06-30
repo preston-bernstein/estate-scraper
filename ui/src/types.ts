@@ -123,6 +123,26 @@ export type DiscoverResponse = {
   standouts: Standout[];
 };
 
+export type ScanStatusEvent = {
+  phase: string;
+  running: boolean;
+  failed: boolean;
+  message: string;
+  lastScannedAt: string | null;
+};
+
+export type ScanEvent =
+  | { type: "phase"; phase: string; msg: string }
+  | { type: "scrape_done"; count: number }
+  | { type: "sale_start"; saleIdx: number; totalSales: number; saleId: string; title: string; total: number; originalTotal: number }
+  | { type: "progress"; saleId: string; done: number; total: number; found: number; errors: number }
+  | { type: "finding"; saleId: string; description: string; confidence: string | null }
+  | { type: "sale_skip"; saleId: string; title: string; imagesAnalyzed: number; totalImages: number }
+  | { type: "oracle_request"; saleId: string; title: string; saleScore: number }
+  | { type: "sale_done"; saleId: string; imagesProcessed: number; imagesWithFindings: number; analysisPhase: string; totalImages: number; saleScore: number }
+  | { type: "error"; msg: string }
+  | { type: string; [key: string]: unknown };
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";

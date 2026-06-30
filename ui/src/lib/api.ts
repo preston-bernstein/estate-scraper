@@ -6,6 +6,8 @@ import type {
   Hunt,
   RankedSale,
   SaleSummary,
+  ScanEvent,
+  ScanStatusEvent,
   SettingsResponse,
   StatusResponse,
 } from "../types";
@@ -118,6 +120,58 @@ export const api = {
     request<{ sales: RankedSale[] }>(
       `/api/discover/search?q=${encodeURIComponent(query)}`,
     ),
+  startScan: () =>
+    request<{ started: boolean; reason?: string }>("/api/scan/start", { method: "POST" }),
+
+  streamScan: async (
+    onStatus: (s: ScanStatusEvent) => void,
+    onEvent: (e: ScanEvent) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+    signal?: AbortSignal,
+  ) => {
+    let res: Response;
+    try {
+      res = await fetch("/api/scan/stream", {
+        headers: { ...(await authHeader()) },
+        signal,
+      });
+    } catch {
+      onDone();
+      return;
+    }
+    if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let eventType = "";
+    while (true) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch {
+        break;
+      }
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
+            if (eventType === "status") onStatus(data as unknown as ScanStatusEvent);
+            else if (eventType === "scan") onEvent(data as unknown as ScanEvent);
+          } catch { /* partial */ }
+          eventType = "";
+        }
+      }
+    }
+    onDone();
+  },
+
   streamChat: async (
     message: string,
     history: { role: "user" | "assistant"; content: string }[],

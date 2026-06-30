@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { readScanState } from "../scan/state.js";
+import { startScan } from "../lib/scan-runner.js";
 import type { AppEnv } from "../types/env.js";
 import {
   getLastScannedAt,
@@ -125,7 +126,12 @@ statusRoutes.get("/", async (c) => {
   });
 });
 
-export const scanRoutes = new Hono();
+export const scanRoutes = new Hono<AppEnv>();
+
+scanRoutes.post("/start", async (c) => {
+  const result = startScan();
+  return c.json(result, result.started ? 200 : 409);
+});
 
 scanRoutes.get("/stream", async (c) => {
   return streamSSE(c, async (stream) => {

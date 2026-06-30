@@ -1,7 +1,8 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { use, Suspense } from "react";
-import { LogOut } from "lucide-react";
+import { use, Suspense, useState, useEffect, useCallback } from "react";
+import { LogOut, ScanLine } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
+import { ScanProgressCard } from "./ScanProgressCard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { api } from "../lib/api";
 import { cached } from "../lib/cache";
@@ -49,19 +50,60 @@ function UserMenu() {
   );
 }
 
+function RunScanButton({ onStart }: { onStart: () => void }) {
+  const [busy, setBusy] = useState(false);
+
+  const handleClick = useCallback(async () => {
+    setBusy(true);
+    try {
+      await api.startScan();
+      onStart();
+    } catch {
+      // already running or error — onStart still opens the card
+      onStart();
+    } finally {
+      setBusy(false);
+    }
+  }, [onStart]);
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={busy}
+      title="Run scan now"
+      className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+    >
+      <ScanLine size={13} />
+      {busy ? "Starting…" : "Scan"}
+    </button>
+  );
+}
+
 export function Layout() {
+  const [showScanCard, setShowScanCard] = useState(false);
+
+  // Auto-show card if a scan is already running when the app loads
+  useEffect(() => {
+    api.getStatus().then((s) => {
+      if (s.scanRunning) setShowScanCard(true);
+    }).catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="sticky top-0 z-20 border-b border-black/5 bg-zinc-50/90 backdrop-blur dark:border-white/10 dark:bg-zinc-950/90">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <div>
-            <p className="text-base font-semibold tracking-tight">Estate Sales</p>
-            {/* Status is non-critical — if it fails, stay quiet rather than crash the shell. */}
-            <ErrorBoundary fallback={() => <span className="text-xs text-zinc-400">Status unavailable</span>}>
-              <Suspense fallback={<p className="text-xs text-zinc-400">Loading…</p>}>
-                <ScanStatus />
-              </Suspense>
-            </ErrorBoundary>
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-base font-semibold tracking-tight">Estate Sales</p>
+              {/* Status is non-critical — if it fails, stay quiet rather than crash the shell. */}
+              <ErrorBoundary fallback={() => <span className="text-xs text-zinc-400">Status unavailable</span>}>
+                <Suspense fallback={<p className="text-xs text-zinc-400">Loading…</p>}>
+                  <ScanStatus />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+            <RunScanButton onStart={() => setShowScanCard(true)} />
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
@@ -115,6 +157,10 @@ export function Layout() {
       </nav>
 
       <ChatPanel />
+
+      {showScanCard && (
+        <ScanProgressCard onClose={() => setShowScanCard(false)} />
+      )}
     </div>
   );
 }
