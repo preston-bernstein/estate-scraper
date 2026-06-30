@@ -26,7 +26,7 @@ const now = new Date().toISOString();
 
 const { runMigrations, db } = await import(pathToFileURL(`${apiDir}/dist/db/index.js`));
 runMigrations(`${apiDir}/drizzle`);
-const { sales, findings } = await import(pathToFileURL(`${apiDir}/dist/db/schema.js`));
+const { sales, findings, images } = await import(pathToFileURL(`${apiDir}/dist/db/schema.js`));
 
 const base = { url: "https://example.com/s", address: "5 Oak St", city: "Decatur", state: "GA", zip: "30033", lat: 33.8, lon: -84.26, distanceMiles: 8, scrapedAt: now };
 
@@ -35,11 +35,17 @@ db.insert(sales).values([
   { saleId: "E2E-PAST", title: "E2E Past Estate", startDate: iso(-5), endDate: iso(-3), ...base },
 ]).run();
 
-db.insert(findings).values([
-  { saleId: "E2E-UP", imageUrl: "https://example.com/a.jpg", description: "Stickley oak armchair", scrapedAt: now, confidence: "high" },
-  { saleId: "E2E-UP", imageUrl: "https://example.com/b.jpg", description: "brass floor lamp", scrapedAt: now, confidence: "medium" },
-  { saleId: "E2E-PAST", imageUrl: "https://example.com/c.jpg", description: "walnut credenza", scrapedAt: now, confidence: "high" },
-]).run();
+// Mirror a real scan: each finding has a durable images row (with thumbnail_path) it
+// links to via image_id, so the /thumbs/:id resilience path is exercised.
+const seed = [
+  { saleId: "E2E-UP", imageUrl: "https://example.com/a.jpg", description: "Stickley oak armchair", confidence: "high" },
+  { saleId: "E2E-UP", imageUrl: "https://example.com/b.jpg", description: "brass floor lamp", confidence: "medium" },
+  { saleId: "E2E-PAST", imageUrl: "https://example.com/c.jpg", description: "walnut credenza", confidence: "high" },
+];
+for (const s of seed) {
+  const img = db.insert(images).values({ saleId: s.saleId, imageUrl: s.imageUrl, thumbnailPath: "/nonexistent/thumb.jpg" }).returning({ id: images.id }).get();
+  db.insert(findings).values({ saleId: s.saleId, imageId: img.id, imageUrl: s.imageUrl, description: s.description, scrapedAt: now, confidence: s.confidence }).run();
+}
 
 // index.js runMigrations() uses "./drizzle" relative to cwd; chdir so it resolves.
 process.chdir(apiDir);

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { RankedSale } from "../types";
 import { cn } from "../lib/utils";
 import type { Category } from "./CategoryStrip";
+import { ResilientImage } from "./ResilientImage";
 
 function daysLeft(endDate: string): number {
   const end = new Date(endDate);
@@ -81,14 +82,11 @@ export function RankedSaleCard({ sale, rank, filter }: Props) {
           {displayed.map((f) => (
             <div key={f.id} className="flex-none w-24">
               <div className="aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 relative mb-1">
-                {f.imageUrl ? (
-                  <img
-                    src={f.imageUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                ) : null}
+                <ResilientImage
+                  srcs={[f.thumbUrl, f.imageUrl]}
+                  alt={f.description}
+                  className="w-full h-full object-cover"
+                />
                 <span
                   className={cn(
                     "absolute bottom-0.5 right-0.5 text-[9px] px-1 py-px rounded-sm",

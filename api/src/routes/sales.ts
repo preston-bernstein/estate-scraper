@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { readScanState } from "../scan/state.js";
@@ -6,6 +7,7 @@ import {
   getLastScannedAt,
   getOutcome,
   getSaleDetail,
+  getThumbnailPath,
   listAllItems,
   listAllSales,
   listPastSales,
@@ -84,6 +86,28 @@ findingsRoutes.get("/", async (c) => {
     .filter(Boolean);
   const results = await searchFindings(keywords);
   return c.json({ findings: results });
+});
+
+// Public (mounted outside /api/*): serves the durable saved thumbnail by image id.
+// Public so plain <img> tags work (they can't carry the Bearer token); these are
+// downscaled copies of already-public listing photos. 404 → client falls back to the
+// CDN url, then a placeholder.
+export const thumbsRoutes = new Hono();
+
+thumbsRoutes.get("/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) return c.body(null, 400);
+  const path = await getThumbnailPath(id);
+  if (!path) return c.body(null, 404);
+  try {
+    const buf = await readFile(path);
+    return c.body(buf, 200, {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=604800",
+    });
+  } catch {
+    return c.body(null, 404);
+  }
 });
 
 export const statusRoutes = new Hono();

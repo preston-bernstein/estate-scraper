@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { todayIsoDate } from "../lib/date.js";
 import { db } from "../db/index.js";
-import { findings, hunts, planItems, saleOutcomes, sales, userSettings } from "../db/schema.js";
+import { findings, hunts, images, planItems, saleOutcomes, sales, userSettings } from "../db/schema.js";
 import {
   aggregateHuntMatchCounts,
   findingMatchesKeywords,
@@ -44,7 +44,23 @@ function pickThumbnail(findingRows: FindingRow[]) {
   return {
     imageUrl: best.imageUrl,
     description: best.description,
+    imageId: best.imageId,
   };
+}
+
+// Durable thumbnail URL for a linked image (served by /thumbs/:id from the saved
+// file). Falls back to the CDN imageUrl client-side when the thumbnail 404s.
+export function thumbUrlForImageId(imageId: number | null): string | null {
+  return imageId != null ? `/thumbs/${imageId}` : null;
+}
+
+// Absolute path of a saved thumbnail, for the /thumbs serving route.
+export async function getThumbnailPath(id: number): Promise<string | null> {
+  const [row] = await db
+    .select({ path: images.thumbnailPath })
+    .from(images)
+    .where(eq(images.id, id));
+  return row?.path ?? null;
 }
 
 export async function buildSaleSummary(
@@ -79,6 +95,7 @@ export async function buildSaleSummary(
     lon: sale.lon,
     distanceMiles: sale.distanceMiles,
     thumbnailUrl: thumbnail?.imageUrl ?? null,
+    thumbUrl: thumbUrlForImageId(thumbnail?.imageId ?? null),
     thumbnailDescription: thumbnail?.description ?? null,
     huntMatchCounts,
     totalMatchedFindings: matchedFindings.length,
@@ -160,6 +177,7 @@ export async function listAllItems(limit = 600) {
     .select({
       id: findings.id,
       saleId: findings.saleId,
+      imageId: findings.imageId,
       imageUrl: findings.imageUrl,
       description: findings.description,
       confidence: findings.confidence,
@@ -171,7 +189,11 @@ export async function listAllItems(limit = 600) {
     .innerJoin(sales, eq(findings.saleId, sales.saleId))
     .orderBy(desc(findings.id))
     .limit(limit);
-  return { items: rows };
+  const items = rows.map(({ imageId, ...row }) => ({
+    ...row,
+    thumbUrl: thumbUrlForImageId(imageId),
+  }));
+  return { items };
 }
 
 export async function getSaleDetail(ownerSub: string, saleId: string) {
@@ -195,6 +217,7 @@ export async function getSaleDetail(ownerSub: string, saleId: string) {
       id: finding.id,
       saleId: finding.saleId,
       imageUrl: finding.imageUrl,
+      thumbUrl: thumbUrlForImageId(finding.imageId),
       description: finding.description,
       scrapedAt: finding.scrapedAt,
       matched: userHunts.some((hunt) =>

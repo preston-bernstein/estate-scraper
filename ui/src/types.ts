@@ -17,6 +17,7 @@ export type SaleSummary = {
   lon: number;
   distanceMiles: number;
   thumbnailUrl: string | null;
+  thumbUrl: string | null;
   thumbnailDescription: string | null;
   huntMatchCounts: HuntMatchCount[];
   totalMatchedFindings: number;
@@ -26,6 +27,7 @@ export type Finding = {
   id: number;
   saleId: string;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   scrapedAt: string;
   matched: boolean;
@@ -71,6 +73,7 @@ export type AllItem = {
   id: number;
   saleId: string;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   confidence: string | null;
   saleTitle: string;
@@ -81,6 +84,7 @@ export type AllItem = {
 export type DiscoverFinding = {
   id: number;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   score: number;
   tag: "electronics" | "kitsch" | "collectible" | "furniture";
@@ -105,6 +109,7 @@ export type RankedSale = {
 export type Standout = {
   id: number;
   imageUrl: string;
+  thumbUrl: string | null;
   description: string;
   saleId: string;
   saleTitle: string;
