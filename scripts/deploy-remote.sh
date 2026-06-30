@@ -30,7 +30,7 @@ echo "==> Installing + restarting on server..."
 DEPLOY_HOME="/home/$DEPLOY_USER"
 $SSH $REMOTE "
   set -e
-  sudo rsync -a --exclude='data' --exclude='node_modules' /tmp/estate-deploy/ $DEPLOY_HOME/estate-scraper/
+  sudo rsync -a --exclude='data' --exclude='node_modules' --exclude='.env' /tmp/estate-deploy/ $DEPLOY_HOME/estate-scraper/
   sudo chown -R $DEPLOY_USER:$DEPLOY_USER $DEPLOY_HOME/estate-scraper
   PUID=\$(id -u $DEPLOY_USER)
   sudo -u $DEPLOY_USER bash -c 'cd $DEPLOY_HOME/estate-scraper && npm install --silent'
