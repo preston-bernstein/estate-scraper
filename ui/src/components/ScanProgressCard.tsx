@@ -61,8 +61,9 @@ export function ScanProgressCard({ onClose }: Props) {
   const running = status?.running ?? false;
   const failed = status?.failed ?? false;
   const phase = status?.phase ?? "idle";
-  const activeSale = sales.find((s) => s.status === "analyzing");
-  const doneSales = sales.filter((s) => s.status === "done" || s.status === "skipped").length;
+  const validSales = sales.filter((s): s is SaleProgress => Boolean(s));
+  const activeSale = validSales.find((s) => s.status === "analyzing");
+  const doneSales = validSales.filter((s) => s.status === "done" || s.status === "skipped").length;
 
   // Auto-scroll to active sale
   useEffect(() => {
@@ -124,12 +125,12 @@ export function ScanProgressCard({ onClose }: Props) {
       {/* Sale list */}
       {!minimized && (
         <div ref={listRef} className="max-h-72 overflow-y-auto">
-          {sales.length === 0 && (
+          {validSales.length === 0 && (
             <p className="text-xs text-zinc-400 text-center py-4">
               {connected ? "Waiting for sales…" : "Connecting…"}
             </p>
           )}
-          {sales.map((sale) => (
+          {validSales.map((sale) => (
             <div key={sale.saleId} data-active={sale.status === "analyzing"}>
               <SaleRow sale={sale} />
             </div>
@@ -138,7 +139,7 @@ export function ScanProgressCard({ onClose }: Props) {
       )}
 
       {/* Footer — oracle legend if any */}
-      {!minimized && sales.some((s) => s.oracleRequested) && (
+      {!minimized && validSales.some((s) => s.oracleRequested) && (
         <div className="px-3 py-1.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-1">
           <Zap size={10} className="text-amber-500" />
           <span className="text-[10px] text-zinc-400">Claude oracle called</span>

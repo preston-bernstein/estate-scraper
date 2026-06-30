@@ -52,7 +52,8 @@ export function useScanStream(active: boolean) {
 
           if (e.type === "sale_start") {
             const ev = e as SaleStartEvent;
-            sales[ev.saleIdx] = {
+            const existing = sales.findIndex((s) => s?.saleId === ev.saleId);
+            const entry: SaleProgress = {
               saleId: ev.saleId,
               saleIdx: ev.saleIdx,
               title: ev.title,
@@ -61,6 +62,12 @@ export function useScanStream(active: boolean) {
               findings: 0,
               status: "analyzing",
             };
+            if (existing >= 0) {
+              sales[existing] = entry;
+            } else {
+              sales.push(entry);
+              sales.sort((a, b) => (a?.saleIdx ?? 0) - (b?.saleIdx ?? 0));
+            }
             return { ...prev, totalSales: ev.totalSales, sales };
           }
 
