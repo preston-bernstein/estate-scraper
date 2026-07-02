@@ -1,15 +1,14 @@
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { db } from "../db/index.js";
-import { hunts } from "../db/schema.js";
 import type { AppEnv } from "../types/env.js";
+import { parsePositiveIntParam } from "../lib/params.js";
 import { getUserSettings, upsertUserSettings } from "../services/sales.js";
+import { createHunt, deleteHunt, getOwnedHunt, listHunts, updateHunt } from "../services/hunts.js";
 
 export const huntRoutes = new Hono<AppEnv>();
 
 huntRoutes.get("/", async (c) => {
   const ownerSub = c.get("userSub");
-  const rows = await db.select().from(hunts).where(eq(hunts.ownerSub, ownerSub));
+  const rows = await listHunts(ownerSub);
   return c.json({ hunts: rows });
 });
 
@@ -30,34 +29,22 @@ huntRoutes.post("/", async (c) => {
     return c.json({ error: "keywords array is required" }, 400);
   }
 
-  const [created] = await db
-    .insert(hunts)
-    .values({
-      ownerSub,
-      name: body.name.trim(),
-      keywords,
-      createdAt: new Date().toISOString(),
-    })
-    .returning();
-
+  const created = await createHunt(ownerSub, body.name.trim(), keywords);
   return c.json({ hunt: created }, 201);
 });
 
 huntRoutes.put("/:id", async (c) => {
   const ownerSub = c.get("userSub");
-  const id = Number(c.req.param("id"));
+  const id = parsePositiveIntParam(c.req.param("id"));
+  if (id === null) return c.json({ error: "Hunt not found" }, 404);
   const body = await c.req.json<{ name?: string; keywords?: string[] }>();
 
-  const [existing] = await db
-    .select()
-    .from(hunts)
-    .where(eq(hunts.id, id));
-
-  if (!existing || existing.ownerSub !== ownerSub) {
+  const existing = await getOwnedHunt(id, ownerSub);
+  if (!existing) {
     return c.json({ error: "Hunt not found" }, 404);
   }
 
-  const updates: Partial<typeof hunts.$inferInsert> = {};
+  const updates: Partial<typeof existing> = {};
   if (body.name?.trim()) {
     updates.name = body.name.trim();
   }
@@ -69,29 +56,21 @@ huntRoutes.put("/:id", async (c) => {
     updates.keywords = keywords;
   }
 
-  const [updated] = await db
-    .update(hunts)
-    .set(updates)
-    .where(eq(hunts.id, id))
-    .returning();
-
+  const updated = await updateHunt(id, updates);
   return c.json({ hunt: updated });
 });
 
 huntRoutes.delete("/:id", async (c) => {
   const ownerSub = c.get("userSub");
-  const id = Number(c.req.param("id"));
+  const id = parsePositiveIntParam(c.req.param("id"));
+  if (id === null) return c.json({ error: "Hunt not found" }, 404);
 
-  const [existing] = await db
-    .select()
-    .from(hunts)
-    .where(eq(hunts.id, id));
-
-  if (!existing || existing.ownerSub !== ownerSub) {
+  const existing = await getOwnedHunt(id, ownerSub);
+  if (!existing) {
     return c.json({ error: "Hunt not found" }, 404);
   }
 
-  await db.delete(hunts).where(eq(hunts.id, id));
+  await deleteHunt(id);
   return c.json({ ok: true });
 });
 

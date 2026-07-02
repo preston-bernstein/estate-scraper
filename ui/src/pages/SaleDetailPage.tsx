@@ -52,7 +52,7 @@ function ImageAuditPanel({ saleId }: { saleId: string }) {
       {open && imgs !== null && (
         <div className="space-y-2">
           <p className="text-xs text-gray-400">
-            Green border = Gemini found something. Gray = nothing / gated. Click for raw response.
+            Green border = the vision model found something. Gray = nothing / gated. Click for raw response.
           </p>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {imgs.map((img) => {

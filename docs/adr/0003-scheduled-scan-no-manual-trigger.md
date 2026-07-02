@@ -1,3 +1,5 @@
 # Scheduled scan at 1am Friday, no manual trigger in the dashboard
 
 Estate sales follow a weekly cycle — listings post Thursday/Friday, sales run Friday–Sunday. The dashboard is a read interface for Friday morning browsing, not a control panel. A macOS LaunchAgent triggers the scan at 1am Friday (GPU free after 12:30am); results are ready when the user wakes up. Removing the scan trigger from the UI eliminates a class of accidental data loss (new scan wiping prior cities' findings) and keeps the interface focused on browsing.
+
+**Superseded in part:** `POST /api/scan/start` was added, gated to `SCAN_OWNER_SUB` only (never exposed to other users), for out-of-cycle re-scans (e.g. after a bug fix). The original data-loss concern doesn't apply — a scan run never overwrites prior data (see the Scan definition in `docs/CONTEXT.md`), and `scan/state.ts` refuses to start a second scan while one is already running. The scheduled Friday scan remains the primary trigger; this is a narrow escape hatch, not a return to manual-trigger-by-default.

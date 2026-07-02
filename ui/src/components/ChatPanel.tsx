@@ -46,37 +46,31 @@ export function ChatPanel() {
     setStreaming(true);
     setTimeout(scrollBottom, 50);
 
-    await api.streamChat(
-      text,
-      history,
-      (token) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, content: m.content + token } : m,
-          ),
-        );
-        scrollBottom();
-      },
-      () => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, streaming: false } : m,
-          ),
-        );
-        setStreaming(false);
-        scrollBottom();
-      },
-      (err) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, content: `Error: ${err}`, streaming: false }
-              : m,
-          ),
-        );
-        setStreaming(false);
-      },
-    );
+    function handleToken(token: string) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token } : m)),
+      );
+      scrollBottom();
+    }
+
+    function handleStreamDone() {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+      );
+      setStreaming(false);
+      scrollBottom();
+    }
+
+    function handleStreamError(err: string) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: `Error: ${err}`, streaming: false } : m,
+        ),
+      );
+      setStreaming(false);
+    }
+
+    await api.streamChat(text, history, handleToken, handleStreamDone, handleStreamError);
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -108,7 +102,7 @@ export function ChatPanel() {
               <MessageSquare size={15} className="text-zinc-500" />
               <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Curator</span>
               <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full">
-                qwen3:30b
+                AI
               </span>
             </div>
             <button

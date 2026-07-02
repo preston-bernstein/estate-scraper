@@ -22,6 +22,10 @@ export function thumbnailPathFor(saleId: string, imageUrl: string): string {
   return join(THUMBNAIL_DIR, saleId, `${hash}.jpg`);
 }
 
+// THUMBNAIL_DIR is a NAS mount in production — mkdir is a network round trip, so
+// avoid repeating it for every image once a sale's directory is known to exist.
+const knownDirs = new Set<string>();
+
 // Write a thumbnail from an already-downloaded image buffer. Fail-open: on any error
 // returns null and the caller persists the image row with thumbnail_path NULL.
 export async function writeThumbnail(
@@ -35,7 +39,11 @@ export async function writeThumbnail(
       .resize(THUMB_MAX_EDGE, THUMB_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: THUMB_QUALITY })
       .toBuffer();
-    await mkdir(dirname(path), { recursive: true });
+    const dir = dirname(path);
+    if (!knownDirs.has(dir)) {
+      await mkdir(dir, { recursive: true });
+      knownDirs.add(dir);
+    }
     await writeFile(path, jpeg);
     return path;
   } catch {

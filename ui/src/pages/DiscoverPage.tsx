@@ -56,9 +56,7 @@ function DiscoverContent() {
   const standouts =
     category === "all"
       ? data.standouts
-      : data.standouts.filter(
-          (s) => s.tag === category || (category === "collectible" && s.tag === "collectible"),
-        );
+      : data.standouts.filter((s) => s.tag === category);
 
   return (
     <div className="space-y-6">

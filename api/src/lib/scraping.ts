@@ -14,6 +14,7 @@ export const HOME = {
   zip: requireEnv("HOME_ZIP"),
   lat: Number(requireEnv("HOME_LAT")),
   lon: Number(requireEnv("HOME_LON")),
+  timezone: process.env.HOME_TIMEZONE ?? "America/New_York",
 };
 
 export const DEFAULT_RADIUS_MILES = 30;
@@ -40,5 +41,10 @@ export const NOMINATIM_USER_AGENT =
 
 export const SCAN_STATE_PATH =
   process.env.SCAN_STATE_PATH ?? "./data/scan-state.json";
+
+// Append-only NDJSON event log, kept separate from the small status file so pushing
+// an event is an O(1) append rather than a full rewrite of the whole history.
+export const SCAN_EVENTS_PATH =
+  process.env.SCAN_EVENTS_PATH ?? "./data/scan-events.ndjson";
 
 export const METRO_LISTING_URL = `${BASE_URL}/GA/Atlanta`;

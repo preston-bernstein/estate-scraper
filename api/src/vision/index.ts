@@ -87,9 +87,9 @@ export type VisionEvent =
       saleScore: number;
     }
   | {
-      // Every analyzed photo (winners AND junk) — the durable corpus row (ADR 0014).
+      // Every analyzed Image (winners AND junk) — the durable corpus row (ADR 0014).
       // phash is the dedup fingerprint computed in stage 1; positionPct is where the
-      // photo sat in the listing. Persisted to the images table; junk rows are the
+      // Image sat in the listing. Persisted to the images table; junk rows are the
       // negative exemplars the taste ranker trains on. Not emitted in reference mode.
       type: "analyzed_image";
       saleId: string;
@@ -127,6 +127,15 @@ type TaggedResult = ImageResult & { positionIndex: number };
 
 // ─── Response parsing ─────────────────────────────────────────────────────────
 
+// A model line reporting "nothing here" for one category, e.g. "SILVER: NONE" or
+// "TOYS: 0". Shared by hasFindings, scoreResponse, and items.ts's extractItems so a
+// junk line is never accidentally persisted as a real finding line by one consumer
+// while being correctly ignored by another.
+export function isJunkLine(line: string): boolean {
+  const t = line.trim().toUpperCase();
+  return t.endsWith(": 0") || t.endsWith(": NONE") || t.endsWith(": NONE VISIBLE");
+}
+
 export function hasFindings(response: string): boolean {
   const trimmed = response.trim();
   if (!trimmed) return false;
@@ -139,12 +148,7 @@ export function hasFindings(response: string): boolean {
   if (/^(The image|I can|This image|In this image|The photo)/i.test(trimmed)) return false;
 
   const lines = normalized.split(/\r?\n/).filter((line) => line.trim());
-  const junk = lines.filter(
-    (line) =>
-      line.endsWith(": 0") ||
-      line.endsWith(": NONE") ||
-      line.endsWith(": NONE VISIBLE"),
-  ).length;
+  const junk = lines.filter(isJunkLine).length;
 
   return junk < lines.length;
 }
@@ -178,23 +182,23 @@ export function stripConfidenceTags(response: string): string {
 
 export function scoreResponse(response: string): number {
   if (!hasFindings(response)) return 0;
-  const lines = response.trim().split(/\r?\n/).filter((l) => {
-    const t = l.trim().toUpperCase();
-    return t && !t.endsWith(": 0") && !t.endsWith(": NONE") && !t.endsWith(": NONE VISIBLE");
-  });
+  const lines = response.trim().split(/\r?\n/).filter((l) => l.trim() && !isJunkLine(l));
   return lines.reduce((sum, line) => {
     const c = extractLineConfidence(line);
     return sum + (c === "high" ? 1.0 : c === "medium" ? 0.5 : c === "low" ? 0.15 : 0.5);
   }, 0);
 }
 
-// Emit one analyzed_image event per processed photo so the scan persists the full
+// Emit one analyzed_image event per processed Image so the scan persists the full
 // corpus row (phash + position), not just the flagged findings. Errored images are
-// still real photos in the listing, so they're persisted too.
+// still real Images in the listing, so they're persisted too. `totalOriginal` is the
+// full listing size (sale.imageUrls.length), not the post-dedup/skip candidate
+// count, so positionPct means "where in the listing" even on an incremental re-scan
+// that only sees newly-appended Images.
 function* emitAnalyzed(
   saleId: string,
   tagged: TaggedResult[],
-  total: number,
+  totalOriginal: number,
   phashByUrl: Map<string, string | null>,
 ): Generator<VisionEvent> {
   for (const r of tagged) {
@@ -203,11 +207,99 @@ function* emitAnalyzed(
       saleId,
       imageUrl: r.url,
       phash: phashByUrl.get(r.url) ?? null,
-      positionPct: r.positionIndex / Math.max(total - 1, 1),
+      positionPct: r.positionIndex / Math.max(totalOriginal - 1, 1),
       thumbnailPath: r.thumbnailPath,
       visionResponse: r.response || null,
     };
   }
+}
+
+// Persist pHash-dropped near-duplicates as null-response image rows so the next
+// incremental scan's skip-set (getProcessedImageUrls) includes them. Without this, a
+// dropped dupe's URL never enters the images table; the next run finds it "unseen"
+// again but its surviving twin is no longer in that run's candidate batch, so the
+// dupe passes dedup and gets a second (paid) vision pass, inflating the sale's score.
+function* emitDuplicates(
+  saleId: string,
+  duplicateUrls: string[],
+  originalIndexByUrl: Map<string, number>,
+  totalOriginal: number,
+  phashByUrl: Map<string, string | null>,
+): Generator<VisionEvent> {
+  for (const url of duplicateUrls) {
+    yield {
+      type: "analyzed_image",
+      saleId,
+      imageUrl: url,
+      phash: phashByUrl.get(url) ?? null,
+      positionPct: (originalIndexByUrl.get(url) ?? 0) / Math.max(totalOriginal - 1, 1),
+      thumbnailPath: null,
+      visionResponse: null,
+    };
+  }
+}
+
+// Run processImage over a batch and fold the results into the shared accumulators.
+// Extracted because the same "mapPool over an image slice, tally score/errors, push
+// into allTagged" shape was duplicated across the full-pass, tail-probe, and
+// intermediate-zone branches below. positionIndex comes from the image's absolute
+// slot in the original listing (originalIndexByUrl), not loop-local offsets — a
+// findIndex against uniqueImages would break for an Image already dropped from this
+// run's candidate set.
+async function processImagesInto(
+  images: Array<{ url: string; buffer: Buffer }>,
+  saleId: string,
+  workers: number,
+  originalIndexByUrl: Map<string, number>,
+  fallbackIndex: number,
+  allTagged: TaggedResult[],
+): Promise<{ scoreDelta: number; errorDelta: number }> {
+  if (images.length === 0) return { scoreDelta: 0, errorDelta: 0 };
+  const results = await mapPool(images, workers, (img) => processImage(img.url, saleId, img.buffer));
+  let scoreDelta = 0;
+  let errorDelta = 0;
+  for (const r of results) {
+    if (r.error) errorDelta++;
+    else scoreDelta += scoreResponse(r.response);
+    const positionIndex = originalIndexByUrl.get(r.url) ?? fallbackIndex;
+    allTagged.push({ ...r, positionIndex });
+  }
+  return { scoreDelta, errorDelta };
+}
+
+// sale_skip + the corpus flush + sale_done — the epilogue shared by both early-stop
+// branches (small sale fully covered by lead; lead+tail both came up empty).
+function* emitEarlyStop(
+  sale: ScrapedSale,
+  imagesAnalyzed: number,
+  totalImages: number,
+  errors: number,
+  saleScore: number,
+  allTagged: TaggedResult[],
+  totalOriginal: number,
+  phashByUrl: Map<string, string | null>,
+): Generator<VisionEvent> {
+  yield {
+    type: "sale_skip",
+    saleId: sale.saleId,
+    title: sale.title,
+    url: sale.url,
+    imagesAnalyzed,
+    totalImages,
+  };
+  yield* emitAnalyzed(sale.saleId, allTagged, totalOriginal, phashByUrl);
+  yield {
+    type: "sale_done",
+    saleId: sale.saleId,
+    title: sale.title,
+    url: sale.url,
+    imagesProcessed: imagesAnalyzed,
+    imagesWithFindings: 0,
+    errors,
+    analysisPhase: "EARLY_STOP",
+    totalImages,
+    saleScore,
+  };
 }
 
 function sampleK<T>(arr: T[], k: number): T[] {
@@ -410,7 +502,7 @@ async function processImage(
     const buffer = preloadedBuffer ?? (await fetchBuffer(url));
     if (!buffer) throw new Error("image download failed");
 
-    // Durable thumbnail for every analyzed photo (ADR 0013) — written before the
+    // Durable thumbnail for every analyzed Image (ADR 0013) — written before the
     // quality gate so even gated-out junk is preserved as a negative exemplar and
     // stays re-embeddable. Fail-open: null path just means the row gets no thumbnail.
     result.thumbnailPath = await writeThumbnail(saleId, url, buffer);
@@ -486,6 +578,42 @@ export async function checkModelAvailable(
   }
 }
 
+// ─── Budget/tier decisions (pure — the money-spending logic, kept testable) ────
+
+export type LeadOutcome = "FULL" | "TAIL_PROBE_CANDIDATE" | "INTERMEDIATE";
+
+// After the lead sample scores a sale, decide whether to process the rest in full,
+// probe the tail before committing, or continue as an intermediate-confidence sale
+// (which still gets a full pass but is oracle-eligible). Pulled out as a pure
+// function so the threshold boundaries are unit-testable without running the vision
+// pipeline — this decision controls how much of the paid VLM budget a sale spends.
+export function decideLeadOutcome(
+  saleScore: number,
+  leadCount: number,
+  total: number,
+): LeadOutcome {
+  if (leadCount >= total || saleScore >= HIGH_SCORE_THRESHOLD) return "FULL";
+  if (saleScore < SWITCH_SCORE_THRESHOLD) return "TAIL_PROBE_CANDIDATE";
+  return "INTERMEDIATE";
+}
+
+// Whether an intermediate/uncertain-zone sale should be escalated to the (paid)
+// oracle. Requires the oracle to be configured, at least one finding, and a score
+// inside the uncertain band — clearly wrong-but-cheap (below MIN) or clearly right
+// (at/above MAX) sales don't need the expensive tiebreaker.
+export function shouldEscalateToOracle(
+  oracleConfigured: boolean,
+  foundCount: number,
+  saleScore: number,
+): boolean {
+  return (
+    oracleConfigured &&
+    foundCount > 0 &&
+    saleScore >= ORACLE_SCORE_MIN &&
+    saleScore < ORACLE_SCORE_MAX
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 const MAX_PER_DESCRIPTION = 5;
@@ -507,24 +635,38 @@ export async function* processSalesStream(
   const totalSales = sales.length;
 
   for (const [saleIdx, sale] of sales.entries()) {
+    // Absolute position in the full listing, independent of what this run's
+    // skip-set/maxImages filtering removes — used for positionPct so it stays
+    // meaningful across incremental multi-night scans (an Image appended to a
+    // 50-Image listing gets position ~50/50, not 0/10).
+    const originalIndexByUrl = new Map(sale.imageUrls.map((url, i) => [url, i]));
+    const totalOriginal = sale.imageUrls.length;
+
     let candidateUrls = sale.imageUrls.filter((url) => !skipUrls.has(url));
     if (options.maxImages) candidateUrls = candidateUrls.slice(0, options.maxImages);
     if (candidateUrls.length === 0) continue;
 
-    const originalTotal = candidateUrls.length;
+    const originalCandidateTotal = candidateUrls.length;
 
     // ── Stage 1: Download all candidates + pHash dedup ─────────────────────
     // All images downloaded upfront so pHash can compare across the full set;
     // adaptive sampling phases reuse the cached buffers without re-downloading.
     const seenHashes: bigint[] = [];
     const phashByUrl = new Map<string, string | null>();
+    const duplicateUrls: string[] = [];
     const deduped = await mapPool(candidateUrls, PREFILTER_WORKERS, async (url) => {
       const buffer = await fetchBuffer(url);
       if (!buffer) return null;
       try {
         const hash = await computeDHash(buffer);
         if (seenHashes.some((h) => hammingDistance(hash, h) <= PHASH_HAMMING_THRESHOLD)) {
-          return null; // near-duplicate
+          // Record the drop (not just discard it) so it's persisted below and enters
+          // the skip-set on the next incremental scan — otherwise this URL looks
+          // "unseen" next time, but its surviving twin may no longer be in that run's
+          // candidate batch, so the dupe passes dedup and gets a second paid pass.
+          phashByUrl.set(url, hash.toString(16).padStart(16, "0"));
+          duplicateUrls.push(url);
+          return null;
         }
         seenHashes.push(hash);
         phashByUrl.set(url, hash.toString(16).padStart(16, "0"));
@@ -540,9 +682,9 @@ export async function* processSalesStream(
     );
     const total = uniqueImages.length;
 
-    const dupesRemoved = originalTotal - total;
+    const dupesRemoved = originalCandidateTotal - total;
     console.log(
-      `  [dedup]     ${originalTotal} → ${total} unique` +
+      `  [dedup]     ${originalCandidateTotal} → ${total} unique` +
         (dupesRemoved > 0 ? ` (${dupesRemoved} near-dupes removed)` : ""),
     );
 
@@ -556,7 +698,7 @@ export async function* processSalesStream(
       title: sale.title,
       url: sale.url,
       total,
-      originalTotal,
+      originalTotal: originalCandidateTotal,
     };
 
     if (dryRun) {
@@ -575,6 +717,12 @@ export async function* processSalesStream(
       };
       continue;
     }
+
+    // Persist dropped near-duplicates so they enter the skip-set — see the comment
+    // at the push site above. Skipped for dry-run (no persistence should happen);
+    // harmless no-op for reference mode (its sale_done branch never flushes
+    // analyzed_image events to the DB).
+    yield* emitDuplicates(sale.saleId, duplicateUrls, originalIndexByUrl, totalOriginal, phashByUrl);
 
     // ── Reference mode: full pass, no sampling, emit every image ──────────
     // Money-no-object ground truth for recall@K (ADR 0010). Tier 0 (dedup +
@@ -626,103 +774,84 @@ export async function* processSalesStream(
     let errors = 0;
     const allTagged: TaggedResult[] = [];
 
-    const leadResults = await mapPool(leadImages, workers, (img) =>
-      processImage(img.url, sale.saleId, img.buffer),
-    );
-    for (const [i, r] of leadResults.entries()) {
-      if (r.error) errors++;
-      else saleScore += scoreResponse(r.response);
-      allTagged.push({ ...r, positionIndex: i });
+    {
+      const { scoreDelta, errorDelta } = await processImagesInto(
+        leadImages,
+        sale.saleId,
+        workers,
+        originalIndexByUrl,
+        0,
+        allTagged,
+      );
+      saleScore += scoreDelta;
+      errors += errorDelta;
     }
 
     let analysisPhase: AnalysisPhase = "FULL";
 
-    if (leadCount >= total || saleScore >= HIGH_SCORE_THRESHOLD) {
+    const leadOutcome = decideLeadOutcome(saleScore, leadCount, total);
+
+    if (leadOutcome === "FULL") {
       // Strong signal or lead already covered everything — process remaining
-      if (leadCount < total) {
-        const remainImages = uniqueImages.slice(leadCount);
-        const remainResults = await mapPool(remainImages, workers, (img) =>
-          processImage(img.url, sale.saleId, img.buffer),
-        );
-        for (const [i, r] of remainResults.entries()) {
-          if (r.error) errors++;
-          else saleScore += scoreResponse(r.response);
-          allTagged.push({ ...r, positionIndex: leadCount + i });
-        }
-      }
+      const remainImages = uniqueImages.slice(leadCount);
+      const { scoreDelta, errorDelta } = await processImagesInto(
+        remainImages,
+        sale.saleId,
+        workers,
+        originalIndexByUrl,
+        leadCount,
+        allTagged,
+      );
+      saleScore += scoreDelta;
+      errors += errorDelta;
       analysisPhase = "FULL";
-    } else if (saleScore < SWITCH_SCORE_THRESHOLD) {
+    } else if (leadOutcome === "TAIL_PROBE_CANDIDATE") {
       // Weak lead — probe the tail before committing to full analysis
       const tailStart = Math.max(Math.floor(total * TAIL_SAMPLE_PCT_START), leadCount);
       const tailPool = uniqueImages.slice(tailStart);
 
       if (tailPool.length === 0) {
         // Small sale; lead covered everything meaningful
-        analysisPhase = "EARLY_STOP";
         const imagesAnalyzed = leadCount;
-        yield {
-          type: "sale_skip",
-          saleId: sale.saleId,
-          title: sale.title,
-          url: sale.url,
+        yield* emitEarlyStop(
+          sale,
           imagesAnalyzed,
-          totalImages: total,
-        };
-        yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
-        yield {
-          type: "sale_done",
-          saleId: sale.saleId,
-          title: sale.title,
-          url: sale.url,
-          imagesProcessed: imagesAnalyzed,
-          imagesWithFindings: 0,
+          total,
           errors,
-          analysisPhase,
-          totalImages: total,
           saleScore,
-        };
+          allTagged,
+          totalOriginal,
+          phashByUrl,
+        );
         continue;
       }
 
       const tailSample = sampleK(tailPool, TAIL_SAMPLE_K);
-      const tailResults = await mapPool(tailSample, workers, (img) =>
-        processImage(img.url, sale.saleId, img.buffer),
+      const tailTagged: TaggedResult[] = [];
+      const { scoreDelta: tailScore, errorDelta: tailErrors } = await processImagesInto(
+        tailSample,
+        sale.saleId,
+        workers,
+        originalIndexByUrl,
+        tailStart,
+        tailTagged,
       );
-
-      let tailScore = 0;
-      const tailTagged: TaggedResult[] = tailResults.map((r, i) => {
-        const posIdx = uniqueImages.findIndex((img) => img.url === tailSample[i]!.url);
-        if (r.error) errors++;
-        else tailScore += scoreResponse(r.response);
-        return { ...r, positionIndex: posIdx >= 0 ? posIdx : tailStart + i };
-      });
+      errors += tailErrors;
 
       if (tailScore === 0) {
         // Nothing in lead AND tail — skip this sale
-        analysisPhase = "EARLY_STOP";
-        const imagesAnalyzed = leadCount + tailResults.length;
-        allTagged.push(...tailTagged); // capture tail-probe photos for the corpus
-        yield {
-          type: "sale_skip",
-          saleId: sale.saleId,
-          title: sale.title,
-          url: sale.url,
+        const imagesAnalyzed = leadCount + tailTagged.length;
+        allTagged.push(...tailTagged); // capture tail-probe Images for the corpus
+        yield* emitEarlyStop(
+          sale,
           imagesAnalyzed,
-          totalImages: total,
-        };
-        yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
-        yield {
-          type: "sale_done",
-          saleId: sale.saleId,
-          title: sale.title,
-          url: sale.url,
-          imagesProcessed: imagesAnalyzed,
-          imagesWithFindings: 0,
+          total,
           errors,
-          analysisPhase,
-          totalImages: total,
           saleScore,
-        };
+          allTagged,
+          totalOriginal,
+          phashByUrl,
+        );
         continue;
       }
 
@@ -736,30 +865,29 @@ export async function* processSalesStream(
       allTagged.push(...tailTagged);
       saleScore += tailScore;
 
-      if (unprobed.length > 0) {
-        const moreResults = await mapPool(unprobed, workers, (img) =>
-          processImage(img.url, sale.saleId, img.buffer),
-        );
-        for (const r of moreResults) {
-          const posIdx = uniqueImages.findIndex((img) => img.url === r.url);
-          if (r.error) errors++;
-          else saleScore += scoreResponse(r.response);
-          allTagged.push({ ...r, positionIndex: posIdx >= 0 ? posIdx : leadCount });
-        }
-      }
+      const { scoreDelta, errorDelta } = await processImagesInto(
+        unprobed,
+        sale.saleId,
+        workers,
+        originalIndexByUrl,
+        leadCount,
+        allTagged,
+      );
+      saleScore += scoreDelta;
+      errors += errorDelta;
     } else {
       // Intermediate zone — full analysis, oracle escalates if uncertain
-      if (leadCount < total) {
-        const remainImages = uniqueImages.slice(leadCount);
-        const remainResults = await mapPool(remainImages, workers, (img) =>
-          processImage(img.url, sale.saleId, img.buffer),
-        );
-        for (const [i, r] of remainResults.entries()) {
-          if (r.error) errors++;
-          else saleScore += scoreResponse(r.response);
-          allTagged.push({ ...r, positionIndex: leadCount + i });
-        }
-      }
+      const remainImages = uniqueImages.slice(leadCount);
+      const { scoreDelta, errorDelta } = await processImagesInto(
+        remainImages,
+        sale.saleId,
+        workers,
+        originalIndexByUrl,
+        leadCount,
+        allTagged,
+      );
+      saleScore += scoreDelta;
+      errors += errorDelta;
       analysisPhase = "FULL";
     }
 
@@ -779,7 +907,7 @@ export async function* processSalesStream(
           found++;
           const confidence = extractTopConfidence(result.response);
           const description = stripConfidenceTags(result.response);
-          const imagePositionPct = result.positionIndex / Math.max(total - 1, 1);
+          const imagePositionPct = result.positionIndex / Math.max(totalOriginal - 1, 1);
 
           yield {
             type: "finding",
@@ -804,9 +932,13 @@ export async function* processSalesStream(
     }
 
     // ── Oracle escalation for uncertain-zone sales ─────────────────────────
-    if (ORACLE_API_BASE && found > 0 && saleScore >= ORACLE_SCORE_MIN && saleScore < ORACLE_SCORE_MAX) {
+    if (shouldEscalateToOracle(Boolean(ORACLE_API_BASE), found, saleScore)) {
+      // Judge the sale on its strongest findings, not the first 6 in listing order —
+      // allTagged is sorted by position above, so without this the oracle could see
+      // only the sale's weakest images.
       const topImageUrls = allTagged
         .filter((r) => !r.error && hasFindings(r.response))
+        .sort((a, b) => scoreResponse(b.response) - scoreResponse(a.response))
         .slice(0, 6)
         .map((r) => r.url);
 
@@ -820,7 +952,7 @@ export async function* processSalesStream(
       };
     }
 
-    yield* emitAnalyzed(sale.saleId, allTagged, total, phashByUrl);
+    yield* emitAnalyzed(sale.saleId, allTagged, totalOriginal, phashByUrl);
     yield {
       type: "sale_done",
       saleId: sale.saleId,

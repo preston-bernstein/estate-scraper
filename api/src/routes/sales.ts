@@ -1,16 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { readScanState } from "../scan/state.js";
+import { readScanEvents, readScanState } from "../scan/state.js";
 import { startScan } from "../lib/scan-runner.js";
-import type { AppEnv } from "../types/env.js";
+import { parsePositiveIntParam } from "../lib/params.js";
+import { scanOwnerSub, type AppEnv } from "../types/env.js";
 import {
   getLastScannedAt,
   getOutcome,
   getSaleDetail,
   getSaleImages,
   getThumbnailPath,
-  listAllItems,
+  listAllFindings,
   listAllSales,
   listPastSales,
   listUpcomingSales,
@@ -80,9 +81,9 @@ salesRoutes.post("/:id/outcome", async (c) => {
 
 export const findingsRoutes = new Hono<AppEnv>();
 
-// Flat feed of every flagged item across all sales — the "all images" grid.
+// Flat feed of every Finding across all sales — the "all images" grid.
 findingsRoutes.get("/all", async (c) => {
-  return c.json(await listAllItems());
+  return c.json(await listAllFindings());
 });
 
 findingsRoutes.get("/", async (c) => {
@@ -102,8 +103,8 @@ findingsRoutes.get("/", async (c) => {
 export const thumbsRoutes = new Hono();
 
 thumbsRoutes.get("/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  if (!Number.isInteger(id) || id <= 0) return c.body(null, 400);
+  const id = parsePositiveIntParam(c.req.param("id"));
+  if (id === null) return c.body(null, 400);
   const path = await getThumbnailPath(id);
   if (!path) return c.body(null, 404);
   try {
@@ -134,10 +135,9 @@ statusRoutes.get("/", async (c) => {
 
 export const scanRoutes = new Hono<AppEnv>();
 
-const SCAN_OWNER_SUB = process.env.SCAN_OWNER_SUB ?? "";
-
 scanRoutes.post("/start", async (c) => {
-  if (!SCAN_OWNER_SUB || c.get("userSub") !== SCAN_OWNER_SUB) {
+  const owner = scanOwnerSub();
+  if (!owner || c.get("userSub") !== owner) {
     return c.json({ error: "Forbidden" }, 403);
   }
   const result = startScan();
@@ -168,14 +168,14 @@ scanRoutes.get("/stream", async (c) => {
         }),
       });
 
-      while (eventIndex < scanState.events.length) {
-        const event = scanState.events[eventIndex]!;
-        eventIndex += 1;
+      const { events, nextIndex } = readScanEvents(eventIndex);
+      for (const event of events) {
         await stream.writeSSE({
           event: "scan",
           data: JSON.stringify(event),
         });
       }
+      eventIndex = nextIndex;
 
       if (!scanState.running && (scanState.phase === "done" || scanState.phase === "idle")) {
         break;

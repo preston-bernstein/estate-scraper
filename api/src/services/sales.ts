@@ -102,8 +102,38 @@ export async function buildSaleSummary(
   };
 }
 
-export async function listUpcomingSales(ownerSub: string) {
+// Shared body for listUpcomingSales/listPastSales/listAllSales — they differ only in
+// which sales rows they select (date filter + order) and whether Hunt-matching
+// gates visibility. Kept as one function so a change to the hunt-filter logic can't
+// be made in one variant and silently missed in the others.
+async function summarizeSales(
+  ownerSub: string,
+  saleRows: SaleRow[],
+  options: { filterByHunts: boolean },
+) {
   const userHunts = await getUserHunts(ownerSub);
+  const saleIds = saleRows.map((s) => s.saleId);
+  const findingsMap = await getFindingsForSales(saleIds);
+  const summaries = [];
+
+  for (const sale of saleRows) {
+    const saleFindings = findingsMap.get(sale.saleId) ?? [];
+    // With Hunts, filter to matches; with none, show everything (noHunts flagged so
+    // the UI can prompt to create Hunts without hiding the sales).
+    if (
+      options.filterByHunts &&
+      userHunts.length > 0 &&
+      !saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)
+    ) {
+      continue;
+    }
+    summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
+  }
+
+  return { sales: summaries, noHunts: userHunts.length === 0 };
+}
+
+export async function listUpcomingSales(ownerSub: string) {
   const today = todayIsoDate();
   const upcomingSales = await db
     .select()
@@ -111,25 +141,10 @@ export async function listUpcomingSales(ownerSub: string) {
     .where(gte(sales.endDate, today))
     .orderBy(sales.startDate, sales.distanceMiles);
 
-  const saleIds = upcomingSales.map((s) => s.saleId);
-  const findingsMap = await getFindingsForSales(saleIds);
-  const summaries = [];
-
-  for (const sale of upcomingSales) {
-    const saleFindings = findingsMap.get(sale.saleId) ?? [];
-    // With Hunts, filter to matches; with none, show everything (noHunts flagged so
-    // the UI can prompt to create Hunts without hiding the sales).
-    if (userHunts.length > 0 && !saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
-      continue;
-    }
-    summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
-  }
-
-  return { sales: summaries, noHunts: userHunts.length === 0 };
+  return summarizeSales(ownerSub, upcomingSales, { filterByHunts: true });
 }
 
 export async function listPastSales(ownerSub: string) {
-  const userHunts = await getUserHunts(ownerSub);
   const today = todayIsoDate();
   const pastSales = await db
     .select()
@@ -137,42 +152,23 @@ export async function listPastSales(ownerSub: string) {
     .where(lt(sales.endDate, today))
     .orderBy(desc(sales.endDate), sales.distanceMiles);
 
-  const saleIds = pastSales.map((s) => s.saleId);
-  const findingsMap = await getFindingsForSales(saleIds);
-  const summaries = [];
-
-  for (const sale of pastSales) {
-    const saleFindings = findingsMap.get(sale.saleId) ?? [];
-    if (userHunts.length > 0 && !saleMatchesHunts(saleFindings.map((f) => f.description), userHunts)) {
-      continue;
-    }
-    summaries.push(await buildSaleSummary(sale, userHunts, saleFindings));
-  }
-
-  return { sales: summaries, noHunts: userHunts.length === 0 };
+  return summarizeSales(ownerSub, pastSales, { filterByHunts: true });
 }
 
 // Every sale, no date or Hunt filter — the ungated "see everything" browse. Hunt
 // match counts are still annotated when the user has Hunts, but nothing is hidden.
 export async function listAllSales(ownerSub: string) {
-  const userHunts = await getUserHunts(ownerSub);
   const allSales = await db
     .select()
     .from(sales)
     .orderBy(desc(sales.endDate), sales.distanceMiles);
 
-  const saleIds = allSales.map((s) => s.saleId);
-  const findingsMap = await getFindingsForSales(saleIds);
-  const summaries = [];
-  for (const sale of allSales) {
-    summaries.push(await buildSaleSummary(sale, userHunts, findingsMap.get(sale.saleId) ?? []));
-  }
-  return { sales: summaries, noHunts: userHunts.length === 0 };
+  return summarizeSales(ownerSub, allSales, { filterByHunts: false });
 }
 
-// A flat feed of every flagged item (Finding) across all sales — the "all images"
-// grid. Newest first, capped so the grid stays responsive.
-export async function listAllItems(limit = 600) {
+// A flat feed of every Finding across all sales — the "all images" grid. Newest
+// first, capped so the grid stays responsive.
+export async function listAllFindings(limit = 600) {
   const rows = await db
     .select({
       id: findings.id,

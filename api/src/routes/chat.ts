@@ -8,11 +8,26 @@ const CHAT_MODEL = process.env.CHAT_MODEL ?? "qwen3:30b-a3b";
 
 export const chatRoutes = new Hono<AppEnv>();
 
+const MAX_MESSAGE_LENGTH = 4000;
+
 chatRoutes.post("/", async (c) => {
-  const { message, history = [] } = await c.req.json<{
-    message: string;
-    history?: Array<{ role: "user" | "assistant"; content: string }>;
+  const body = await c.req.json<{
+    message?: unknown;
+    history?: Array<{ role?: unknown; content?: unknown }>;
   }>();
+
+  if (typeof body.message !== "string" || !body.message.trim()) {
+    return c.json({ error: "message is required" }, 400);
+  }
+  if (body.message.length > MAX_MESSAGE_LENGTH) {
+    return c.json({ error: `message must be under ${MAX_MESSAGE_LENGTH} characters` }, 400);
+  }
+  const message = body.message;
+
+  const history = (body.history ?? []).filter(
+    (h): h is { role: "user" | "assistant"; content: string } =>
+      (h.role === "user" || h.role === "assistant") && typeof h.content === "string",
+  );
 
   const context = await getRecentFindingsContext();
 

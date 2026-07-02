@@ -132,6 +132,12 @@ export type ScanStatusEvent = {
   lastScannedAt: string | null;
 };
 
+// Exhaustive over every event type the server actually emits (scan/index.ts's
+// writer.pushEvent wrapper events, plus every VisionEvent variant it forwards
+// verbatim). No catch-all member: a `{ type: string }` fallback would overlap every
+// other member and defeat discriminated-union narrowing on `e.type === "..."`
+// checks — functionally `any` at this boundary. analyzed_image/image_result/done
+// carry fields the UI doesn't read yet, so only `type` is declared for them.
 export type ScanEvent =
   | { type: "phase"; phase: string; msg: string }
   | { type: "scrape_done"; count: number }
@@ -141,8 +147,10 @@ export type ScanEvent =
   | { type: "sale_skip"; saleId: string; title: string; imagesAnalyzed: number; totalImages: number }
   | { type: "oracle_request"; saleId: string; title: string; saleScore: number }
   | { type: "sale_done"; saleId: string; imagesProcessed: number; imagesWithFindings: number; analysisPhase: string; totalImages: number; saleScore: number }
-  | { type: "error"; msg: string }
-  | { type: string; [key: string]: unknown };
+  | { type: "analyzed_image" }
+  | { type: "image_result" }
+  | { type: "done" }
+  | { type: "error"; msg: string };
 
 export type AnalyzedImage = {
   id: number;

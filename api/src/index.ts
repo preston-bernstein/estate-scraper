@@ -11,24 +11,31 @@ import { planRoutes } from "./routes/plan.js";
 import { findingsRoutes, salesRoutes, scanRoutes, statusRoutes, thumbsRoutes } from "./routes/sales.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { chatRoutes } from "./routes/chat.js";
-import { DEV_USER_SUB, type AppEnv } from "./types/env.js";
+import { DEV_USER_SUB, corsOrigins, scanOwnerSub, type AppEnv } from "./types/env.js";
 
 runMigrations();
 
 const app = new Hono<AppEnv>();
 
-app.use("*", cors());
+app.use("*", cors({ origin: corsOrigins() }));
 app.use("/api/*", authMiddleware);
+
+// Uniform error shape: every route returns { error } on failure, so an uncaught
+// throw (bad JSON body, db error) shouldn't fall through to Hono's plain-text 500.
+app.onError((err, c) => {
+  console.error(err);
+  return c.json({ error: err.message }, 500);
+});
 
 // Public thumbnail serving (no auth — see thumbsRoutes). Mounted before the static
 // catch-all so /thumbs/:id resolves to the file, not index.html.
 app.route("/thumbs", thumbsRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));
-const SCAN_OWNER_SUB = process.env.SCAN_OWNER_SUB ?? "";
 app.get("/api/me", (c) => {
   const sub = c.get("userSub");
-  return c.json({ sub, canTriggerScan: Boolean(SCAN_OWNER_SUB && sub === SCAN_OWNER_SUB) });
+  const owner = scanOwnerSub();
+  return c.json({ sub, canTriggerScan: Boolean(owner && sub === owner) });
 });
 app.route("/api/sales", salesRoutes);
 app.route("/api/hunts", huntRoutes);

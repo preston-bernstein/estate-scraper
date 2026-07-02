@@ -26,17 +26,31 @@ type ScanOptions = {
   referencePath?: string;
 };
 
+// A bad/missing value (`--max-sales` with no following token, or a non-numeric one)
+// must fail loudly: `NaN ?? default` does NOT fall back (?? only catches
+// null/undefined), so a silent NaN here previously disabled the radius filter
+// entirely (`distance > NaN` is always false) or scanned zero sales
+// (`slice(0, NaN)` is empty).
+function parseNumericArg(argv: string[], index: number, flag: string): number {
+  const raw = argv[index];
+  const value = Number(raw);
+  if (raw === undefined || !Number.isFinite(value)) {
+    throw new Error(`${flag} requires a numeric value, got: ${raw ?? "(missing)"}`);
+  }
+  return value;
+}
+
 function parseArgs(argv: string[]): ScanOptions {
   const options: ScanOptions = {};
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--max-sales") {
-      options.maxSales = Number(argv[++index]);
+      options.maxSales = parseNumericArg(argv, ++index, "--max-sales");
     } else if (arg === "--max-images") {
-      options.maxImages = Number(argv[++index]);
+      options.maxImages = parseNumericArg(argv, ++index, "--max-images");
     } else if (arg === "--radius") {
-      options.radiusMiles = Number(argv[++index]);
+      options.radiusMiles = parseNumericArg(argv, ++index, "--radius");
     } else if (arg === "--skip-vision") {
       options.skipVision = true;
     } else if (arg === "--dry-run") {
