@@ -11,6 +11,7 @@ const ENV_KEYS = [
   "OIDC_ISSUER",
   "OIDC_AUDIENCE",
   "PROXY_SHARED_SECRET",
+  "ALLOW_STUB_IN_PRODUCTION",
 ] as const;
 
 let savedEnv: Record<string, string | undefined>;
@@ -50,6 +51,13 @@ describe("resolveAuthMode validation (startup)", () => {
     process.env.AUTH_MODE = "stub";
     process.env.NODE_ENV = "production";
     await expect(loadAuthMiddleware()).rejects.toThrow(/stub/i);
+  });
+
+  it("allows AUTH_MODE=stub in production only with the explicit e2e escape hatch", async () => {
+    process.env.AUTH_MODE = "stub";
+    process.env.NODE_ENV = "production";
+    process.env.ALLOW_STUB_IN_PRODUCTION = "true";
+    await expect(loadAuthMiddleware()).resolves.toBeDefined();
   });
 
   it("rejects AUTH_MODE=jwt without OIDC_ISSUER", async () => {

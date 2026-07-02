@@ -10,6 +10,9 @@ const DB = "/tmp/estate-e2e.db";
 process.env.DATABASE_URL = DB;
 process.env.AUTH_MODE = "stub";
 process.env.NODE_ENV = "production";
+// Production normally refuses AUTH_MODE=stub (a real deploy left on stub would be
+// open access to anyone) — this fixture is the one deliberate, documented exception.
+process.env.ALLOW_STUB_IN_PRODUCTION = "true";
 process.env.PORT = process.env.E2E_PORT ?? "4321";
 process.env.THUMBNAIL_DIR = "/tmp/estate-e2e-thumbs";
 process.env.HOME_ADDRESS = "1 Test St";

@@ -17,7 +17,12 @@ function resolveAuthMode(): AuthMode {
     throw new Error(`AUTH_MODE="${raw}" must be one of ${VALID_MODES.join(" | ")}`);
   }
   const mode = raw as AuthMode;
-  if (IS_PRODUCTION && mode === "stub") {
+  // Narrow, explicit escape hatch for the e2e test harness (scripts/e2e-server.mjs),
+  // which deliberately boots a production build with stub auth so Playwright can run
+  // against a no-OIDC fixture. Nobody sets this by accident the way they'd leave
+  // AUTH_MODE unset — it has to be typed on purpose, which is the point.
+  const stubAllowedInProduction = process.env.ALLOW_STUB_IN_PRODUCTION === "true";
+  if (IS_PRODUCTION && mode === "stub" && !stubAllowedInProduction) {
     throw new Error("AUTH_MODE=stub is not allowed when NODE_ENV=production");
   }
   if (mode === "jwt") {
