@@ -22,12 +22,6 @@ export type ScanStreamState = {
   connected: boolean;
 };
 
-type SaleStartEvent = Extract<ScanEvent, { type: "sale_start" }>;
-type ProgressEvent = Extract<ScanEvent, { type: "progress" }>;
-type SaleDoneEvent = Extract<ScanEvent, { type: "sale_done" }>;
-type SaleSkipEvent = Extract<ScanEvent, { type: "sale_skip" }>;
-type OracleRequestEvent = Extract<ScanEvent, { type: "oracle_request" }>;
-
 export function useScanStream(active: boolean) {
   const [state, setState] = useState<ScanStreamState>({
     status: null,
@@ -41,23 +35,31 @@ export function useScanStream(active: boolean) {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+    // Every callback below checks this before touching state — streamScan's onDone
+    // fires even when the read loop exits because of the abort() above, so without
+    // this guard the just-superseded stream's onDone clobbers the new connection's
+    // connected:true (banner flashes "disconnected" while events are still arriving).
+    const isCurrent = () => abortRef.current === ac;
 
     setState({ status: null, totalSales: 0, sales: [], connected: true });
 
     api.streamScan(
-      (s) => setState((prev) => ({ ...prev, status: s })),
+      (s) => {
+        if (!isCurrent()) return;
+        setState((prev) => ({ ...prev, status: s }));
+      },
       (e: ScanEvent) => {
+        if (!isCurrent()) return;
         setState((prev) => {
           const sales = [...prev.sales];
 
           if (e.type === "sale_start") {
-            const ev = e as SaleStartEvent;
-            const existing = sales.findIndex((s) => s?.saleId === ev.saleId);
+            const existing = sales.findIndex((s) => s?.saleId === e.saleId);
             const entry: SaleProgress = {
-              saleId: ev.saleId,
-              saleIdx: ev.saleIdx,
-              title: ev.title,
-              totalImages: ev.total,
+              saleId: e.saleId,
+              saleIdx: e.saleIdx,
+              title: e.title,
+              totalImages: e.total,
               done: 0,
               findings: 0,
               status: "analyzing",
@@ -68,44 +70,40 @@ export function useScanStream(active: boolean) {
               sales.push(entry);
               sales.sort((a, b) => (a?.saleIdx ?? 0) - (b?.saleIdx ?? 0));
             }
-            return { ...prev, totalSales: ev.totalSales, sales };
+            return { ...prev, totalSales: e.totalSales, sales };
           }
 
           if (e.type === "progress") {
-            const ev = e as ProgressEvent;
-            const idx = sales.findIndex((s) => s.saleId === ev.saleId);
+            const idx = sales.findIndex((s) => s.saleId === e.saleId);
             if (idx >= 0) {
-              sales[idx] = { ...sales[idx]!, done: ev.done, findings: ev.found };
+              sales[idx] = { ...sales[idx]!, done: e.done, findings: e.found };
             }
             return { ...prev, sales };
           }
 
           if (e.type === "oracle_request") {
-            const ev = e as OracleRequestEvent;
-            const idx = sales.findIndex((s) => s.saleId === ev.saleId);
+            const idx = sales.findIndex((s) => s.saleId === e.saleId);
             if (idx >= 0) sales[idx] = { ...sales[idx]!, oracleRequested: true };
             return { ...prev, sales };
           }
 
           if (e.type === "sale_done") {
-            const ev = e as SaleDoneEvent;
-            const idx = sales.findIndex((s) => s.saleId === ev.saleId);
+            const idx = sales.findIndex((s) => s.saleId === e.saleId);
             if (idx >= 0) {
               sales[idx] = {
                 ...sales[idx]!,
                 status: "done",
-                done: ev.imagesProcessed,
-                findings: ev.imagesWithFindings,
-                score: ev.saleScore,
-                analysisPhase: ev.analysisPhase,
+                done: e.imagesProcessed,
+                findings: e.imagesWithFindings,
+                score: e.saleScore,
+                analysisPhase: e.analysisPhase,
               };
             }
             return { ...prev, sales };
           }
 
           if (e.type === "sale_skip") {
-            const ev = e as SaleSkipEvent;
-            const idx = sales.findIndex((s) => s.saleId === ev.saleId);
+            const idx = sales.findIndex((s) => s.saleId === e.saleId);
             if (idx >= 0) sales[idx] = { ...sales[idx]!, status: "skipped" };
             return { ...prev, sales };
           }
@@ -113,8 +111,14 @@ export function useScanStream(active: boolean) {
           return prev;
         });
       },
-      () => setState((prev) => ({ ...prev, connected: false })),
-      () => setState((prev) => ({ ...prev, connected: false })),
+      () => {
+        if (!isCurrent()) return;
+        setState((prev) => ({ ...prev, connected: false }));
+      },
+      () => {
+        if (!isCurrent()) return;
+        setState((prev) => ({ ...prev, connected: false }));
+      },
       ac.signal,
     );
   }, []);

@@ -32,7 +32,7 @@ export function RankedSaleCard({ sale, rank, filter }: Props) {
   const findings =
     filter === "all"
       ? sale.topFindings
-      : sale.topFindings.filter((f) => f.tag === filter || (filter === "collectible" && f.tag === "collectible"));
+      : sale.topFindings.filter((f) => f.tag === filter);
 
   const displayed = findings.slice(0, 5);
 

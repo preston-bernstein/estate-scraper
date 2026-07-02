@@ -46,6 +46,37 @@ export type Standout = {
   tag: DiscoverFinding["tag"];
 };
 
+type FindingLike = {
+  id: number;
+  imageId: number | null;
+  imageUrl: string;
+  description: string;
+  confidence: string | null;
+};
+
+function toDiscoverFinding(f: FindingLike): DiscoverFinding {
+  return {
+    id: f.id,
+    imageUrl: f.imageUrl,
+    thumbUrl: thumbUrlForImageId(f.imageId),
+    description: f.description,
+    score: scoreFinding(f.description, f.confidence),
+    tag: tagFinding(f.description),
+  };
+}
+
+function tallyFindings(descriptions: string[]): RankedSale["tally"] {
+  const tally = { electronics: 0, kitsch: 0, collectibles: 0, furniture: 0 };
+  for (const desc of descriptions) {
+    const tag = tagFinding(desc);
+    if (tag === "electronics") tally.electronics++;
+    else if (tag === "kitsch") tally.kitsch++;
+    else if (tag === "collectible") tally.collectibles++;
+    else tally.furniture++;
+  }
+  return tally;
+}
+
 function tagFinding(desc: string): DiscoverFinding["tag"] {
   if (ELECTRONICS.test(desc)) return "electronics";
   if (KITSCH.test(desc)) return "kitsch";
@@ -103,23 +134,8 @@ export async function getDiscoverData(): Promise<{
     const saleFindings = findingsBySale.get(sale.saleId) ?? [];
     if (saleFindings.length === 0) continue;
 
-    const scored = saleFindings.map((f) => ({
-      id: f.id,
-      imageUrl: f.imageUrl,
-      thumbUrl: thumbUrlForImageId(f.imageId),
-      description: f.description,
-      score: scoreFinding(f.description, f.confidence),
-      tag: tagFinding(f.description),
-    }));
-
-    const tally = { electronics: 0, kitsch: 0, collectibles: 0, furniture: 0 };
-    for (const f of scored) {
-      if (f.tag === "electronics") tally.electronics++;
-      else if (f.tag === "kitsch") tally.kitsch++;
-      else if (f.tag === "collectible") tally.collectibles++;
-      else tally.furniture++;
-    }
-
+    const scored = saleFindings.map(toDiscoverFinding);
+    const tally = tallyFindings(saleFindings.map((f) => f.description));
     const saleScore = scored.reduce((sum, f) => sum + f.score, 0);
     const topFindings = [...scored].sort((a, b) => b.score - a.score).slice(0, 6);
 
@@ -150,15 +166,11 @@ export async function getDiscoverData(): Promise<{
       const score = scoreFinding(f.description, f.confidence);
       if (score >= 4) {
         standouts.push({
-          id: f.id,
-          imageUrl: f.imageUrl,
-          thumbUrl: thumbUrlForImageId(f.imageId),
-          description: f.description,
+          ...toDiscoverFinding(f),
           saleId: sale.saleId,
           saleTitle: sale.title,
           distanceMiles: sale.distanceMiles,
           score,
-          tag: tagFinding(f.description),
         });
       }
     }
@@ -227,25 +239,8 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
     const saleMatched = matchedBySale.get(saleId) ?? [];
     const saleAll = allFindingsBySale.get(saleId) ?? [];
 
-    const topFindings = saleMatched
-      .map((f) => ({
-        id: f.id,
-        imageUrl: f.imageUrl,
-        thumbUrl: thumbUrlForImageId(f.imageId),
-        description: f.description,
-        score: scoreFinding(f.description, f.confidence),
-        tag: tagFinding(f.description),
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    const tally = { electronics: 0, kitsch: 0, collectibles: 0, furniture: 0 };
-    for (const f of saleAll) {
-      const tag = tagFinding(f.description);
-      if (tag === "electronics") tally.electronics++;
-      else if (tag === "kitsch") tally.kitsch++;
-      else if (tag === "collectible") tally.collectibles++;
-      else tally.furniture++;
-    }
+    const topFindings = saleMatched.map(toDiscoverFinding).sort((a, b) => b.score - a.score);
+    const tally = tallyFindings(saleAll.map((f) => f.description));
 
     results.push({
       saleId: sale.saleId,

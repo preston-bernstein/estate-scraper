@@ -22,6 +22,15 @@ const ORACLE_USER_TEMPLATE = (title: string, address: string) =>
   "Return JSON only, no other text:\n" +
   '{ "score": 1-5, "topItems": ["item1", "item2"], "shouldAttend": true/false, "reasoning": "one sentence" }';
 
+// Pull the first balanced-looking JSON object out of a model completion, tolerating
+// ```json fences and leading/trailing prose. Returns null if none is found.
+function extractJsonBlock(text: string): string | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) return null;
+  return text.slice(start, end + 1);
+}
+
 export async function callOracle(
   title: string,
   address: string,
@@ -76,11 +85,27 @@ export async function callOracle(
   }
 
   try {
+    // Third-party VLM response — shape is not guaranteed.
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
-    const parsed = JSON.parse(text) as Partial<OracleResult>;
+    // Models wrap JSON in ```json fences even at temp 0.1 with "JSON only" — strip
+    // fences / pull the first {...} block before parsing, else a valid verdict is
+    // silently dropped for exactly the uncertain-zone sales the oracle exists for.
+    const jsonText = extractJsonBlock(text);
+    if (!jsonText) {
+      console.error("[oracle] no JSON object in response");
+      return null;
+    }
+    const parsed = JSON.parse(jsonText) as Partial<OracleResult>;
+    const score = Number(parsed.score);
+    // Reject a non-numeric / out-of-range score rather than storing NaN (→ NULL in
+    // SQLite), which would leave oracle_score diverged from oracle_verdict.
+    if (!Number.isFinite(score) || score < 1 || score > 5) {
+      console.error(`[oracle] invalid score: ${parsed.score}`);
+      return null;
+    }
     return {
-      score: Number(parsed.score ?? 0),
+      score,
       topItems: Array.isArray(parsed.topItems) ? parsed.topItems : [],
       shouldAttend: Boolean(parsed.shouldAttend),
       reasoning: String(parsed.reasoning ?? ""),

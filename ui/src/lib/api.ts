@@ -21,6 +21,35 @@ async function authHeader(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${user.access_token}` };
 }
 
+// Shared fetch→reader→decoder→line-buffer loop for streamScan and streamChat, which
+// otherwise hand-rolled the identical partial-line-buffering logic — a fix to one
+// wouldn't reach the other. `onLine` gets each complete line as it arrives; the
+// trailing partial line (mid-chunk) is held back until more data completes it.
+async function readLines(
+  response: Response,
+  // Return false to stop reading early (e.g. a terminal "done"/"error" payload).
+  onLine: (line: string) => boolean | void,
+): Promise<void> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  outer: while (true) {
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch {
+      break;
+    }
+    if (chunk.done) break;
+    buf += decoder.decode(chunk.value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (onLine(line) === false) break outer;
+    }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -144,34 +173,19 @@ export const api = {
       return;
     }
     if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
     let eventType = "";
-    while (true) {
-      let chunk: ReadableStreamReadResult<Uint8Array>;
-      try {
-        chunk = await reader.read();
-      } catch {
-        break;
+    await readLines(res, (line) => {
+      if (line.startsWith("event: ")) {
+        eventType = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
+          if (eventType === "status") onStatus(data as unknown as ScanStatusEvent);
+          else if (eventType === "scan") onEvent(data as unknown as ScanEvent);
+        } catch { /* partial */ }
+        eventType = "";
       }
-      if (chunk.done) break;
-      buf += decoder.decode(chunk.value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
-            if (eventType === "status") onStatus(data as unknown as ScanStatusEvent);
-            else if (eventType === "scan") onEvent(data as unknown as ScanEvent);
-          } catch { /* partial */ }
-          eventType = "";
-        }
-      }
-    }
+    });
     onDone();
   },
 
@@ -191,28 +205,30 @@ export const api = {
       onError(`HTTP ${res.status}`);
       return;
     }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const text = decoder.decode(value, { stream: true });
-      for (const line of text.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const payload = JSON.parse(line.slice(6)) as {
-            token?: string;
-            done?: boolean;
-            error?: string;
-          };
-          if (payload.error) { onError(payload.error); return; }
-          if (payload.token) onToken(payload.token);
-          if (payload.done) { onDone(); return; }
-        } catch {
-          // partial line
+    let finished = false;
+    await readLines(res, (line) => {
+      if (!line.startsWith("data: ")) return;
+      try {
+        const payload = JSON.parse(line.slice(6)) as {
+          token?: string;
+          done?: boolean;
+          error?: string;
+        };
+        if (payload.error) {
+          onError(payload.error);
+          finished = true;
+          return false;
         }
+        if (payload.token) onToken(payload.token);
+        if (payload.done) {
+          onDone();
+          finished = true;
+          return false;
+        }
+      } catch {
+        // partial line
       }
-    }
-    onDone();
+    });
+    if (!finished) onDone();
   },
 };

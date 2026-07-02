@@ -1,4 +1,4 @@
-import type { Confidence } from "../vision/index.js";
+import { isJunkLine, type Confidence } from "../vision/index.js";
 import { resolveMakers } from "./lexicon.js";
 
 // Closed category vocabulary (ADR 0014, 0018). Keep this list small and stable —
@@ -24,18 +24,23 @@ export const CATEGORIES = [
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-export type ItemConfidence = "high" | "med" | "low";
+// Same underlying scale, but desirability (how wanted) and idConfidence (how sure the
+// source is of the identification) are distinct axes — see inferDesirability's
+// comment. Kept as separate aliases so a field-type mismatch is a type error, not
+// just a naming convention.
+export type Desirability = "high" | "med" | "low";
+export type IdConfidence = "high" | "med" | "low";
 
 export type ItemDraft = {
   maker: string | null;
   makerRaw: string | null;
   category: Category;
   era: string | null;
-  desirability: ItemConfidence;
+  desirability: Desirability;
   matchedLexicon: string[];
   itemDesc: string;
   source: "vlm" | "lexicon";
-  idConfidence: ItemConfidence;
+  idConfidence: IdConfidence;
 };
 
 // Ordered most-specific-first: the first category with a keyword hit wins, so kitsch
@@ -133,10 +138,23 @@ const CATEGORY_RULES: Array<{ category: Category; keywords: string[] }> = [
   },
 ];
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Word-boundary matching, not substring includes(): a bare substring check let short
+// keywords match inside unrelated words ("ring" inside "box spring" → misfiled as
+// jewelry_watches). Precompiled once at module load, not per classifyCategory call.
+const CATEGORY_MATCHERS: Array<{ category: Category; matchers: RegExp[] }> = CATEGORY_RULES.map(
+  ({ category, keywords }) => ({
+    category,
+    matchers: keywords.map((k) => new RegExp(`\\b${escapeRegExp(k)}\\b`, "i")),
+  }),
+);
+
 export function classifyCategory(line: string): Category {
-  const padded = ` ${line.toLowerCase()} `;
-  for (const { category, keywords } of CATEGORY_RULES) {
-    if (keywords.some((k) => padded.includes(k))) return category;
+  for (const { category, matchers } of CATEGORY_MATCHERS) {
+    if (matchers.some((re) => re.test(line))) return category;
   }
   return "other";
 }
@@ -145,7 +163,10 @@ export function classifyCategory(line: string): Category {
 // generic "antique/vintage" floor, so "1950s mid-century" → "1950s".
 export function inferEra(line: string): string | null {
   const t = line.toLowerCase();
-  const decade = /\b(18|19|20)\d0s\b/.exec(t) ?? /\b(?:'|’)(\d0)s\b/.exec(t);
+  // The apostrophe-decade fallback ("'50s") can't use a leading \b: after a space,
+  // both the space and the apostrophe are non-word characters, so \b never matches
+  // there. Anchor on start-of-string-or-whitespace instead.
+  const decade = /\b(18|19|20)\d0s\b/.exec(t) ?? /(?:^|\s)['’](\d0)s\b/.exec(t);
   if (decade) return decade[0].replace(/[’']/, "").trim();
   const circa = /\bcirca\s+(1[89]\d{2}|20\d{2})\b/.exec(t);
   if (circa) return `circa ${circa[1]}`;
@@ -173,13 +194,13 @@ const PREMIUM_ERAS = new Set([
 // Desirability ≠ identification confidence. A lexicon maker hit (a name a collector
 // seeks) or a premium era signal lifts it to high; otherwise items the VLM bothered
 // to list sit at med. Human Outcomes later override to gold (ADR 0015).
-export function inferDesirability(makerCount: number, era: string | null): ItemConfidence {
+export function inferDesirability(makerCount: number, era: string | null): Desirability {
   if (makerCount > 0) return "high";
   if (era && PREMIUM_ERAS.has(era)) return "high";
   return "med";
 }
 
-function mapConfidence(c: Confidence | null): ItemConfidence {
+function mapConfidence(c: Confidence | null): IdConfidence {
   if (c === "medium") return "med";
   if (c === "high" || c === "low") return c;
   return "med";
@@ -193,10 +214,13 @@ export function extractItems(input: {
   confidence: Confidence | null;
 }): ItemDraft[] {
   const idConfidence = mapConfidence(input.confidence);
+  // Mirror hasFindings/scoreResponse's junk-line filter (e.g. "TOYS: NONE") — without
+  // it, a mixed response mints a spurious finding_items row for a category the VLM
+  // explicitly reported as absent, polluting the locked corpus facets (ADR 0014/0018).
   const lines = input.description
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter(Boolean);
+    .filter((l) => l && !isJunkLine(l));
 
   return lines.map((line) => {
     const makers = resolveMakers(line);

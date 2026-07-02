@@ -1,8 +1,42 @@
+import { timingSafeEqual } from "node:crypto";
 import { createMiddleware } from "hono/factory";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { DEV_USER_SUB, type AppEnv } from "../types/env.js";
 
-const AUTH_MODE = process.env.AUTH_MODE ?? "stub";
+const VALID_MODES = ["stub", "forwarded", "jwt"] as const;
+type AuthMode = (typeof VALID_MODES)[number];
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+// Fail fast on a bad/missing config rather than silently falling back to a dev
+// identity: a typo (AUTH_MODE=JWT) or a missing EnvironmentFile must never turn
+// production into open access. See docs/adr/0006 (stub is local-dev only).
+function resolveAuthMode(): AuthMode {
+  const raw = process.env.AUTH_MODE ?? "stub";
+  if (!(VALID_MODES as readonly string[]).includes(raw)) {
+    throw new Error(`AUTH_MODE="${raw}" must be one of ${VALID_MODES.join(" | ")}`);
+  }
+  const mode = raw as AuthMode;
+  if (IS_PRODUCTION && mode === "stub") {
+    throw new Error("AUTH_MODE=stub is not allowed when NODE_ENV=production");
+  }
+  if (mode === "jwt") {
+    if (!process.env.OIDC_ISSUER) throw new Error("OIDC_ISSUER required when AUTH_MODE=jwt");
+    if (!process.env.OIDC_AUDIENCE) throw new Error("OIDC_AUDIENCE required when AUTH_MODE=jwt");
+  }
+  if (mode === "forwarded" && !process.env.PROXY_SHARED_SECRET) {
+    throw new Error("PROXY_SHARED_SECRET required when AUTH_MODE=forwarded");
+  }
+  return mode;
+}
+
+const AUTH_MODE = resolveAuthMode();
+
+// Comma-separated allowlist; the token's `alg` header is never trusted to pick this.
+const JWT_ALGORITHMS = (process.env.OIDC_ALGORITHMS ?? "RS256")
+  .split(",")
+  .map((a) => a.trim())
+  .filter(Boolean);
 
 // Lazy-init: fetch JWKS URI from discovery document (avoids hardcoding provider-specific paths)
 let JWKSPromise: Promise<ReturnType<typeof createRemoteJWKSet>> | null = null;
@@ -29,28 +63,53 @@ async function resolveFromJwt(headers: Headers): Promise<string | null> {
   if (!auth?.startsWith("Bearer ")) return null;
   const token = auth.slice(7);
   const jwks = await getJWKS();
-  const { payload } = await jwtVerify(token, jwks);
+  // Pin issuer, audience, and algorithms. Without these, any token signed by a key
+  // in the shared IdP JWKS (Authentik reuses one signing cert across providers)
+  // would verify here and impersonate its sub — the cross-service token mix-up class
+  // of CVE-2025-62610, plus algorithm confusion.
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer: process.env.OIDC_ISSUER,
+    audience: process.env.OIDC_AUDIENCE,
+    algorithms: JWT_ALGORITHMS,
+  });
   return (payload.sub as string) ?? null;
 }
 
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+function resolveFromForwarded(headers: Headers): string | null {
+  // Only trust proxy-set identity headers when the request also carries the shared
+  // secret only the reverse proxy knows. The app is reachable directly on the LAN
+  // (:3000), so without this check anyone could `curl -H 'x-authentik-uid: <owner>'`
+  // and impersonate any user. Bind to loopback in production for defence in depth.
+  const secret = process.env.PROXY_SHARED_SECRET ?? "";
+  const presented = headers.get("x-proxy-secret");
+  if (!presented || !safeEqual(presented, secret)) return null;
+  return (
+    headers.get("x-authentik-uid") ??
+    headers.get("x-remote-user") ??
+    headers.get("x-forwarded-user") ??
+    null
+  );
+}
+
 async function resolveUserSub(headers: Headers): Promise<string | null> {
-  if (AUTH_MODE === "stub") return DEV_USER_SUB;
-
-  if (AUTH_MODE === "forwarded") {
-    return (
-      headers.get("x-authentik-uid") ??
-      headers.get("x-authentik-jwt") ??
-      headers.get("x-remote-user") ??
-      headers.get("x-forwarded-user") ??
-      null
-    );
+  switch (AUTH_MODE) {
+    case "stub":
+      return DEV_USER_SUB;
+    case "forwarded":
+      return resolveFromForwarded(headers);
+    case "jwt":
+      return resolveFromJwt(headers).catch(() => null);
+    default:
+      // Unreachable — AUTH_MODE is validated at startup — but deny rather than allow.
+      return null;
   }
-
-  if (AUTH_MODE === "jwt") {
-    return resolveFromJwt(headers).catch(() => null);
-  }
-
-  return DEV_USER_SUB;
 }
 
 export const authMiddleware = createMiddleware<AppEnv>(async (c, next) => {
