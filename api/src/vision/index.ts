@@ -520,10 +520,9 @@ async function processImage(
       .toBuffer();
     const base64 = resized.toString("base64");
 
-    // Optional GPU pre-filter. Off by default (LOCAL_GATE_ENABLED) so the vision
-    // backend sees every quality-passing image — the conservative Ollama gate was
-    // suppressing recall (sales returning zero findings). Re-enable only to trade
-    // recall for managed-API cost when both gate and vision share a local Ollama.
+    // Free GPU pre-filter (own hardware). Screens out obvious non-candidates before
+    // the paid vision backend sees them — cuts the "paid for a NOTHING result" rate.
+    // Fails open (LOCAL_GATE_ENABLED=false bypasses it entirely, e.g. no local Ollama).
     if (LOCAL_GATE_ENABLED && !(await runLocalGate(base64))) {
       result.durationS = Math.round((performance.now() - started) / 10) / 100;
       return result;

@@ -47,14 +47,16 @@ export const VISION_API_BASE = process.env.VISION_API_BASE ?? "";
 export const VISION_API_KEY = process.env.VISION_API_KEY ?? "";
 export const VISION_API_MODEL = process.env.VISION_API_MODEL ?? "gemini-2.5-flash";
 
-// The local gate (runLocalGate) is a GPU-model pre-filter that decides whether an
-// image is worth sending to the full-vision backend. It saves managed-API cost but
-// depends on a local Ollama VLM and — tuned conservatively — throttled recall (most
-// sales came back with zero findings). Disabled by default: every image that clears
-// the cheap, model-free quality gate now goes straight to the vision backend (Claude),
-// so recall is bounded by the vision model, not the GPU pre-filter. Set
-// LOCAL_GATE_ENABLED=true to restore the Ollama pre-filter.
-export const LOCAL_GATE_ENABLED = process.env.LOCAL_GATE_ENABLED === "true";
+// The local gate (runLocalGate) is a free GPU-model pre-filter (own hardware, no
+// per-call API cost) that screens out obvious non-candidates — exteriors, empty
+// rooms, price boards, HVAC/electrical panels, vehicles, boxes-only shots — before
+// an image reaches the paid vision backend. It fails open (network error / bad
+// response -> PASS) so an Ollama outage never suppresses findings, only costs more
+// by sending everything through. Enabled by default: without it, every quality-
+// passing image (including trivial non-candidates) is billed to the paid vision
+// backend, and roughly half of those calls return nothing (paid for a null result).
+// Set LOCAL_GATE_ENABLED=false to bypass it (e.g. no local Ollama available).
+export const LOCAL_GATE_ENABLED = process.env.LOCAL_GATE_ENABLED !== "false";
 
 // System role — establishes context so the model doesn't need to infer it from the user message.
 // Separating system/user is the correct usage of instruction-tuned models (Qwen, Llama, etc.)
