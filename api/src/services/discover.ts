@@ -1,7 +1,8 @@
 import { and, gte, inArray, or, sql } from "drizzle-orm";
 import { todayIsoDate } from "../lib/date.js";
+import { escapeLike, expandQuery } from "../lib/thesaurus.js";
 import { db } from "../db/index.js";
-import { findings, sales } from "../db/schema.js";
+import { findingItems, findings, sales } from "../db/schema.js";
 import { thumbUrlForImageId } from "./sales.js";
 
 const ELECTRONICS = /atari|sega|nintendo|commodore|colecovision|intellivision|arcade|console|cartridge|reel.to.reel|turntable|amplifier|receiver|tube radio|tube tv|polaroid|apple ii|trs-80|commodore 64/i;
@@ -181,6 +182,15 @@ export async function getDiscoverData(): Promise<{
   return { rankedSales, standouts: standouts.slice(0, 30) };
 }
 
+// Category-only matches (a Finding surfaced solely because its finding_items.category
+// is implied by the query — e.g. "couch" -> seating — with no literal/synonym LIKE
+// hit in its description) count toward a sale's score, but at less than a literal hit
+// (10, below). This is a deliberate scoring decision (docs/semantic-search/plan.md
+// "Design decisions"): category membership is a weaker relevance signal than an
+// actual word match, so a sale that only matches via category never outranks one with
+// a real text hit, preserving today's ordering for the common case.
+const CATEGORY_ONLY_MATCH_WEIGHT = 3;
+
 export async function searchSales(query: string): Promise<RankedSale[]> {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
@@ -197,9 +207,16 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
   const upcomingSaleIds = upcomingSales.map((s) => s.saleId);
   const saleById = new Map(upcomingSales.map((s) => [s.saleId, s]));
 
-  // Item-level match: findings whose description contains any term.
-  const orClause = terms
-    .map((t) => sql`lower(${findings.description}) like ${"%" + t + "%"}`)
+  // Phase 1 thesaurus expansion (docs/semantic-search): "couch" also matches
+  // descriptions containing "sofa"/"chaise lounge"/"loveseat"/etc, and implies the
+  // `seating` finding_items.category. Deterministic, no I/O, no LLM call (FR6/FR7).
+  const { expandedTerms, categories } = expandQuery(terms);
+
+  // Item-level match: findings whose description contains any expanded term (literal
+  // query words plus curated synonyms). Each term is LIKE-escaped so a literal `%`
+  // or `_` in a query can't turn into an unintended wildcard.
+  const orClause = expandedTerms
+    .map((t) => sql`lower(${findings.description}) like ${"%" + escapeLike(t) + "%"} escape '\\'`)
     .reduce((acc, cond) => or(acc, cond)!);
 
   const matched = await db
@@ -208,10 +225,43 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
     .where(and(inArray(findings.saleId, upcomingSaleIds), orClause));
 
   const matchedBySale = new Map<string, typeof matched>();
+  const matchedIds = new Set<number>();
   for (const f of matched) {
+    matchedIds.add(f.id);
     const list = matchedBySale.get(f.saleId) ?? [];
     list.push(f);
     matchedBySale.set(f.saleId, list);
+  }
+
+  // Category-sibling match (FR3/AC3): surfaces Findings whose finding_items.category
+  // is one the query implies, even when the description text itself has no literal
+  // or synonym hit — e.g. a Finding classified `seating` but worded in a way the
+  // thesaurus didn't anticipate. Scoped to upcoming sales only, and de-duped against
+  // findings already picked up by the literal LIKE match above.
+  let categoryOnlyMatched: typeof matched = [];
+  if (categories.length > 0) {
+    const categoryItemRows = await db
+      .select({ findingId: findingItems.findingId })
+      .from(findingItems)
+      .where(and(inArray(findingItems.saleId, upcomingSaleIds), inArray(findingItems.category, categories)));
+
+    const categoryOnlyFindingIds = [...new Set(categoryItemRows.map((r) => r.findingId))].filter(
+      (id) => !matchedIds.has(id),
+    );
+
+    if (categoryOnlyFindingIds.length > 0) {
+      categoryOnlyMatched = await db
+        .select()
+        .from(findings)
+        .where(inArray(findings.id, categoryOnlyFindingIds));
+    }
+  }
+
+  const categoryOnlyBySale = new Map<string, typeof matched>();
+  for (const f of categoryOnlyMatched) {
+    const list = categoryOnlyBySale.get(f.saleId) ?? [];
+    list.push(f);
+    categoryOnlyBySale.set(f.saleId, list);
   }
 
   // Sale-level match: the search box promises "sales, items, cities", so a term hitting
@@ -224,7 +274,9 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
     if (terms.some((t) => hay.includes(t))) saleTextMatch.add(s.saleId);
   }
 
-  const resultSaleIds = [...new Set([...matchedBySale.keys(), ...saleTextMatch])];
+  const resultSaleIds = [
+    ...new Set([...matchedBySale.keys(), ...categoryOnlyBySale.keys(), ...saleTextMatch]),
+  ];
   if (resultSaleIds.length === 0) return [];
 
   const allFindingsForSales = await db
@@ -246,9 +298,12 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
     if (!sale) continue;
 
     const saleMatched = matchedBySale.get(saleId) ?? [];
+    const saleCategoryOnly = categoryOnlyBySale.get(saleId) ?? [];
     const saleAll = allFindingsBySale.get(saleId) ?? [];
 
-    const topFindings = saleMatched.map(toDiscoverFinding).sort((a, b) => b.score - a.score);
+    const topFindings = [...saleMatched, ...saleCategoryOnly]
+      .map(toDiscoverFinding)
+      .sort((a, b) => b.score - a.score);
     const tally = tallyFindings(saleAll.map((f) => f.description));
 
     results.push({
@@ -261,8 +316,14 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
       address: sale.address,
       city: sale.city,
       state: sale.state,
-      // Item matches rank above title/city-only matches; distance breaks ties.
-      score: saleMatched.length * 10 + (saleTextMatch.has(saleId) ? 1 : 0),
+      // Item matches rank above title/city-only matches; category-only matches count
+      // too (FR3/AC3) but at CATEGORY_ONLY_MATCH_WEIGHT (< the literal-hit weight of
+      // 10) so category-only sales never outrank a literal text match; distance
+      // breaks ties.
+      score:
+        saleMatched.length * 10 +
+        saleCategoryOnly.length * CATEGORY_ONLY_MATCH_WEIGHT +
+        (saleTextMatch.has(saleId) ? 1 : 0),
       totalFindings: saleAll.length,
       topFindings,
       tally,
