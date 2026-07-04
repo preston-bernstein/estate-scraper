@@ -3,7 +3,7 @@ export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
 
 // Generator provenance (ADR 0016). Bump PROMPT_VERSION whenever VISION_USER_PROMPT
 // or VISION_SYSTEM_PROMPT changes meaning, so findings/items carry the seam.
-export const PROMPT_VERSION = "selective-v2";
+export const PROMPT_VERSION = "selective-v3";
 
 // The VLM that actually ran: managed API model when VISION_API_BASE is configured,
 // otherwise the local Ollama model. Stamped on findings + finding_items.
@@ -117,5 +117,10 @@ export const VISION_USER_PROMPT =
   "'Atari 2600 6-switch console, early 1980s, cosmetically worn'). " +
   "Infer maker and era from design cues even without a readable label, noting when it is inferred. " +
   "End each line with [high], [medium], or [low] for your confidence in the identification. " +
-  "If nothing of value: NOTHING";
+  "If nothing of value: NOTHING\n\n" +
+  "Many estate sale photos are wide shots of a full room, not close-ups of a single item — a wide " +
+  "room shot with a sofa, a coffee table, and framed wall art contains THREE listable items, not zero. " +
+  "Scan the whole frame systematically (seating, then tables, then wall décor, then smaller objects on " +
+  "surfaces) and list each distinct piece you can identify, even in a busy or professionally " +
+  "staged-looking room. A photo that looks like a furniture showroom is still inventory for sale.";
 
