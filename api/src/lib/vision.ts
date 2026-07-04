@@ -14,6 +14,20 @@ export const VISION_WORKERS = 2;
 export const PREFILTER_WORKERS = 4;
 export const PHASH_HAMMING_THRESHOLD = 10;
 
+// Ollama's /api/chat separates chain-of-thought into a `thinking` field, but a
+// reasoning-tuned model (qwen3-vl) still spends its num_predict budget getting
+// THROUGH that reasoning before it can emit the actual PASS/SKIP word into
+// `content` — at num_predict:10, `content` came back empty on every single call
+// (verified against production images), so the gate silently passed everything,
+// every time, since empty-string never equals "SKIP" (fail-open by construction).
+// 150 is the smallest budget observed to reliably let the model finish reasoning
+// and answer; below it, this gate is a no-op. This trades real latency (10-20s of
+// local GPU time per image) for real Gemini cost savings — it's the local
+// hardware, not a per-call bill, that pays for a bigger budget.
+export const LOCAL_GATE_MAX_TOKENS = process.env.LOCAL_GATE_MAX_TOKENS
+  ? Number(process.env.LOCAL_GATE_MAX_TOKENS)
+  : 150;
+
 // ── Gate prompt: system + user split ─────────────────────────────────────────
 // Research: long text in the user message competes with image tokens for VLM attention
 // (visual attention degrades as text-to-token ratio rises). Keeping criteria in the system

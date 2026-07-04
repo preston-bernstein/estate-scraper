@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import {
   LOCAL_GATE_ENABLED,
+  LOCAL_GATE_MAX_TOKENS,
   LOCAL_GATE_PROMPT,
   LOCAL_GATE_SYSTEM,
   OLLAMA_HOST,
@@ -380,20 +381,22 @@ async function runLocalGate(imageBase64: string): Promise<boolean> {
   // System message carries criteria (keeps text tokens out of the user turn so the
   // model's attention budget stays on the image). User turn is image + minimal question.
   // keep_alive keeps 30B model hot in VRAM across the full 6-hour batch window.
-  // num_predict:10 prevents over-generation; /no_think suppresses Qwen3 CoT preamble.
+  // think:false is the documented way to disable Qwen3 chain-of-thought, but this
+  // model doesn't fully honor it — LOCAL_GATE_MAX_TOKENS is the real fix (below).
   try {
     const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
+        think: false,
         messages: [
           { role: "system", content: LOCAL_GATE_SYSTEM },
           { role: "user", content: LOCAL_GATE_PROMPT, images: [imageBase64] },
         ],
         stream: false,
         keep_alive: "2h",
-        options: { temperature: 0, num_predict: 10 },
+        options: { temperature: 0, num_predict: LOCAL_GATE_MAX_TOKENS },
       }),
       signal: AbortSignal.timeout(60_000),
     });
