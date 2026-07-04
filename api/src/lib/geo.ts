@@ -2,7 +2,7 @@ import { HOME, NOMINATIM_USER_AGENT } from "./scraping.js";
 
 const EARTH_RADIUS_MILES = 3958.8;
 
-export function haversineMiles(
+function haversineMiles(
   lat1: number,
   lon1: number,
   lat2: number,

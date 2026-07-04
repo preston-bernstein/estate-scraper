@@ -5,7 +5,7 @@ import { resolveMakers } from "./lexicon.js";
 // it is a queryable facet, not a free-text field. Anything that doesn't match falls
 // to "other" rather than spawning a new category. Mirrors the taste areas in the
 // vision prompt (furniture/antiques, kitsch/camp, vintage electronics & games).
-export const CATEGORIES = [
+const CATEGORIES = [
   "seating",
   "tables",
   "case_goods",

@@ -8,7 +8,7 @@
 // Seeded from the makers named in the vision prompt (lib/vision.ts) plus the makers
 // that recur in estate sales. Not exhaustive — NULL maker is expected and fine.
 
-export const LEXICON: Record<string, string[]> = {
+const LEXICON: Record<string, string[]> = {
   // ── Furniture ──────────────────────────────────────────────────────────────
   Stickley: ["stickley"],
   Henredon: ["henredon"],

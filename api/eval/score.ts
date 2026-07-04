@@ -52,7 +52,7 @@ const KITSCH_SUBSTRINGS = [
 const VERBOSE_PREFIXES = /^(the image|i can|this image|in this image|the photo)/i;
 
 // Mirror of production hasFindings — must stay in sync with api/src/vision/index.ts
-export function hasFindings(response: string): boolean {
+function hasFindings(response: string): boolean {
   const trimmed = response.trim();
   if (!trimmed) return false;
 
@@ -73,12 +73,12 @@ export function hasFindings(response: string): boolean {
   return junk < lines.length;
 }
 
-export function scoreKeywordHit(raw: string, keywords: string[]): boolean {
+function scoreKeywordHit(raw: string, keywords: string[]): boolean {
   const lower = raw.toLowerCase();
   return keywords.some((kw) => lower.includes(kw.toLowerCase()));
 }
 
-export function scoreSpecificity(raw: string): boolean | null {
+function scoreSpecificity(raw: string): boolean | null {
   const lower = raw.toLowerCase();
   const words = lower.split(/\W+/);
   const hasColor = words.some((w) => COLOR_WORDS.has(w));
@@ -90,7 +90,7 @@ export function scoreSpecificity(raw: string): boolean | null {
   return hasColor || hasMaterial || hasEra || hasValue || hasElectronics || hasKitsch;
 }
 
-export function scoreFormatOk(raw: string): boolean {
+function scoreFormatOk(raw: string): boolean {
   const trimmed = raw.trim();
   if (trimmed.length > 1000) return false;
   if (VERBOSE_PREFIXES.test(trimmed)) return false;

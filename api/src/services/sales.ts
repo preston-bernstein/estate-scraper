@@ -8,15 +8,14 @@ import {
   saleMatchesHunts,
 } from "../lib/hunts.js";
 
-export type FindingRow = typeof findings.$inferSelect;
-export type SaleRow = typeof sales.$inferSelect;
+type FindingRow = typeof findings.$inferSelect;
+type SaleRow = typeof sales.$inferSelect;
 
-
-export async function getUserHunts(ownerSub: string) {
+async function getUserHunts(ownerSub: string) {
   return db.select().from(hunts).where(eq(hunts.ownerSub, ownerSub));
 }
 
-export async function getFindingsForSale(saleId: string) {
+async function getFindingsForSale(saleId: string) {
   return db.select().from(findings).where(eq(findings.saleId, saleId));
 }
 
@@ -63,7 +62,7 @@ export async function getThumbnailPath(id: number): Promise<string | null> {
   return row?.path ?? null;
 }
 
-export async function buildSaleSummary(
+async function buildSaleSummary(
   sale: SaleRow,
   userHunts: Awaited<ReturnType<typeof getUserHunts>>,
   findingRows: FindingRow[],

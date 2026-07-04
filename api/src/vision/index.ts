@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import {
+  LOCAL_GATE_ENABLED,
   LOCAL_GATE_PROMPT,
   LOCAL_GATE_SYSTEM,
   OLLAMA_HOST,
@@ -159,7 +160,7 @@ function extractLineConfidence(line: string): Confidence | null {
   return match[1]!.toLowerCase() as Confidence;
 }
 
-export function extractTopConfidence(response: string): Confidence | null {
+function extractTopConfidence(response: string): Confidence | null {
   const order: Confidence[] = ["high", "medium", "low"];
   let best: Confidence | null = null;
   for (const line of response.split(/\r?\n/)) {
@@ -172,7 +173,7 @@ export function extractTopConfidence(response: string): Confidence | null {
   return best;
 }
 
-export function stripConfidenceTags(response: string): string {
+function stripConfidenceTags(response: string): string {
   return response
     .split(/\r?\n/)
     .map((line) => line.replace(/\s*\[(high|medium|low)\]\s*$/i, "").trimEnd())
@@ -180,7 +181,7 @@ export function stripConfidenceTags(response: string): string {
     .trim();
 }
 
-export function scoreResponse(response: string): number {
+function scoreResponse(response: string): number {
   if (!hasFindings(response)) return 0;
   const lines = response.trim().split(/\r?\n/).filter((l) => l.trim() && !isJunkLine(l));
   return lines.reduce((sum, line) => {
@@ -519,9 +520,11 @@ async function processImage(
       .toBuffer();
     const base64 = resized.toString("base64");
 
-    // Local gate runs only when full-vision backend is a managed API — avoids double-gating
-    // when both gate and full-vision share the same local Ollama (no benefit, only latency).
-    if (VISION_API_BASE && !(await runLocalGate(base64))) {
+    // Optional GPU pre-filter. Off by default (LOCAL_GATE_ENABLED) so the vision
+    // backend sees every quality-passing image — the conservative Ollama gate was
+    // suppressing recall (sales returning zero findings). Re-enable only to trade
+    // recall for managed-API cost when both gate and vision share a local Ollama.
+    if (LOCAL_GATE_ENABLED && !(await runLocalGate(base64))) {
       result.durationS = Math.round((performance.now() - started) / 10) / 100;
       return result;
     }

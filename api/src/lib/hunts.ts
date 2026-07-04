@@ -11,22 +11,6 @@ export function findingMatchesKeywords(
   return keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
 }
 
-export function countHuntMatches(
-  description: string,
-  hunts: { name: string; keywords: string[] }[],
-): HuntMatchCount[] {
-  return hunts
-    .map((hunt) => ({
-      huntName: hunt.name,
-      count: hunt.keywords.some((keyword) =>
-        findingMatchesKeywords(description, [keyword]),
-      )
-        ? 1
-        : 0,
-    }))
-    .filter((entry) => entry.count > 0);
-}
-
 export function aggregateHuntMatchCounts(
   descriptions: string[],
   hunts: { name: string; keywords: string[] }[],
@@ -56,15 +40,6 @@ export function saleMatchesHunts(
   }
 
   return descriptions.some((description) =>
-    hunts.some((hunt) => findingMatchesKeywords(description, hunt.keywords)),
-  );
-}
-
-export function filterMatchedDescriptions(
-  descriptions: string[],
-  hunts: { name: string; keywords: string[] }[],
-): string[] {
-  return descriptions.filter((description) =>
     hunts.some((hunt) => findingMatchesKeywords(description, hunt.keywords)),
   );
 }

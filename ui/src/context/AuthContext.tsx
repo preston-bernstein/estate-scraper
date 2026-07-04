@@ -52,8 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = () =>
     userManager ? userManager.signinRedirect() : Promise.resolve();
 
-  const logout = () =>
-    userManager ? userManager.signoutRedirect() : Promise.resolve();
+  const logout = () => {
+    if (userManager) return userManager.signoutRedirect();
+    const uri = import.meta.env.VITE_LOGOUT_URI as string | undefined;
+    if (uri) window.location.href = uri;
+    return Promise.resolve();
+  };
 
   const isAuthenticated = !userManager || user !== null;
 

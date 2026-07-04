@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { PROMPT_VERSION } from "../../lib/vision.js";
 
 // Integration test for the scan write path against a real migrated SQLite db.
 // Exists because the persistence layer shipped a bug unit tests couldn't see:
@@ -83,7 +84,7 @@ describe("insertFindingsBatch (sync transaction regression)", () => {
     );
     expect(stickley.maker).toBe("Stickley");
     expect(stickley.source).toBe("lexicon");
-    expect(stickley.prompt_version).toBe("enriched-v1");
+    expect(stickley.prompt_version).toBe(PROMPT_VERSION);
   });
 
   // UNIQUE(sale_id, image_url) makes re-running the batch a no-op: the finding

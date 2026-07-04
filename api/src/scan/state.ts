@@ -46,7 +46,7 @@ export function readScanState(): ScanState {
   }
 }
 
-export function writeScanState(state: ScanState) {
+function writeScanState(state: ScanState) {
   ensureStateDir();
   // Atomic replace: write to a temp file then rename (atomic on POSIX) so a
   // concurrent reader never observes a half-written file.

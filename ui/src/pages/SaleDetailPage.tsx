@@ -179,6 +179,11 @@ export function SaleDetailPage() {
       setFindings(result.findings);
       setMatchedCount(result.matchedFindingCount);
       setTotalCount(result.totalFindingCount);
+      // Default to showing every finding when none match the user's Hunts (or there
+      // are no Hunts at all). Otherwise the "matched" filter hides all findings and
+      // the sale looks empty even though it has findings — the whole page reads as
+      // broken. When there ARE matches, keep the focused matched-only default.
+      setShowAll(result.matchedFindingCount === 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sale");
     } finally {

@@ -1,5 +1,4 @@
-export const BASE_URL = "https://www.estatesales.net";
-export const IMG_CDN = "picturescdn.estatesales.net";
+const BASE_URL = "https://www.estatesales.net";
 
 function requireEnv(name: string): string {
   const v = process.env[name];

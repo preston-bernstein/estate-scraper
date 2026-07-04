@@ -15,7 +15,7 @@ export type SaleProgress = {
   oracleRequested?: boolean;
 };
 
-export type ScanStreamState = {
+type ScanStreamState = {
   status: ScanStatusEvent | null;
   totalSales: number;
   sales: SaleProgress[];

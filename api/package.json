@@ -15,6 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:mutation": "stryker run",
     "eval": "tsx eval/index.ts"
   },
   "dependencies": {
@@ -26,6 +27,8 @@
     "sharp": "^0.34.2"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.21",
     "drizzle-kit": "^0.31.1",

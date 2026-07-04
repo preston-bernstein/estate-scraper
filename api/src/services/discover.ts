@@ -197,17 +197,15 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
   const upcomingSaleIds = upcomingSales.map((s) => s.saleId);
   const saleById = new Map(upcomingSales.map((s) => [s.saleId, s]));
 
-  const termConditions = terms.map(
-    (t) => sql`lower(${findings.description}) like ${"%" + t + "%"}`,
-  );
-  const orClause = termConditions.reduce((acc, cond) => or(acc, cond)!);
+  // Item-level match: findings whose description contains any term.
+  const orClause = terms
+    .map((t) => sql`lower(${findings.description}) like ${"%" + t + "%"}`)
+    .reduce((acc, cond) => or(acc, cond)!);
 
   const matched = await db
     .select()
     .from(findings)
     .where(and(inArray(findings.saleId, upcomingSaleIds), orClause));
-
-  if (matched.length === 0) return [];
 
   const matchedBySale = new Map<string, typeof matched>();
   for (const f of matched) {
@@ -216,12 +214,23 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
     matchedBySale.set(f.saleId, list);
   }
 
-  const matchedSaleIds = [...matchedBySale.keys()];
+  // Sale-level match: the search box promises "sales, items, cities", so a term hitting
+  // the title / city / state / address counts even when no item description mentions it.
+  // OR semantics (any term, any field) — the prior item-description-only match returned
+  // nothing for city/title queries, which read as "search is broken".
+  const saleTextMatch = new Set<string>();
+  for (const s of upcomingSales) {
+    const hay = `${s.title} ${s.city} ${s.state} ${s.address}`.toLowerCase();
+    if (terms.some((t) => hay.includes(t))) saleTextMatch.add(s.saleId);
+  }
+
+  const resultSaleIds = [...new Set([...matchedBySale.keys(), ...saleTextMatch])];
+  if (resultSaleIds.length === 0) return [];
 
   const allFindingsForSales = await db
     .select()
     .from(findings)
-    .where(inArray(findings.saleId, matchedSaleIds));
+    .where(inArray(findings.saleId, resultSaleIds));
 
   const allFindingsBySale = new Map<string, typeof allFindingsForSales>();
   for (const f of allFindingsForSales) {
@@ -232,7 +241,7 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
 
   const results: RankedSale[] = [];
 
-  for (const saleId of matchedSaleIds) {
+  for (const saleId of resultSaleIds) {
     const sale = saleById.get(saleId);
     if (!sale) continue;
 
@@ -252,7 +261,8 @@ export async function searchSales(query: string): Promise<RankedSale[]> {
       address: sale.address,
       city: sale.city,
       state: sale.state,
-      score: saleMatched.length,
+      // Item matches rank above title/city-only matches; distance breaks ties.
+      score: saleMatched.length * 10 + (saleTextMatch.has(saleId) ? 1 : 0),
       totalFindings: saleAll.length,
       topFindings,
       tally,

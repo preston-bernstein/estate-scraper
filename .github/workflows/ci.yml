@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Fallow's audit gate diffs against the base ref; give it full history.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -22,8 +25,26 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Fallow (dead-code, duplication, security)
+        run: npm run lint:fallow
+
       - name: Unit tests
         run: npm test
+
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mutation tests (Stryker)
+        run: npm run test:mutation
 
   e2e:
     runs-on: ubuntu-latest

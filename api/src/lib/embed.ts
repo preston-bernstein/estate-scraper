@@ -11,14 +11,14 @@
 // column with a vector from a different model.
 
 export const EMBED_API_BASE = process.env.EMBED_API_BASE ?? "";
-export const EMBED_API_KEY = process.env.EMBED_API_KEY ?? "";
+const EMBED_API_KEY = process.env.EMBED_API_KEY ?? "";
 // SigLIP so400m: 1152-dim. Override per the frozen choice via env.
 export const EMBED_MODEL = process.env.EMBED_MODEL ?? "siglip-so400m-patch14-384";
-export const EMBED_DIM = process.env.EMBED_DIM ? Number(process.env.EMBED_DIM) : null;
+const EMBED_DIM = process.env.EMBED_DIM ? Number(process.env.EMBED_DIM) : null;
 // Images per /embeddings request (server batches these onto the GPU together).
-export const EMBED_BATCH = Number(process.env.EMBED_BATCH ?? 16);
+const EMBED_BATCH = Number(process.env.EMBED_BATCH ?? 16);
 // Concurrent in-flight batch requests.
-export const EMBED_WORKERS = Number(process.env.EMBED_WORKERS ?? 2);
+const EMBED_WORKERS = Number(process.env.EMBED_WORKERS ?? 2);
 
 export function embeddingEnabled(): boolean {
   return EMBED_API_BASE.length > 0;

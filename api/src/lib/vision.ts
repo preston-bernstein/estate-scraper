@@ -3,7 +3,7 @@ export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3-vl:30b";
 
 // Generator provenance (ADR 0016). Bump PROMPT_VERSION whenever VISION_USER_PROMPT
 // or VISION_SYSTEM_PROMPT changes meaning, so findings/items carry the seam.
-export const PROMPT_VERSION = "enriched-v1";
+export const PROMPT_VERSION = "selective-v2";
 
 // The VLM that actually ran: managed API model when VISION_API_BASE is configured,
 // otherwise the local Ollama model. Stamped on findings + finding_items.
@@ -47,6 +47,15 @@ export const VISION_API_BASE = process.env.VISION_API_BASE ?? "";
 export const VISION_API_KEY = process.env.VISION_API_KEY ?? "";
 export const VISION_API_MODEL = process.env.VISION_API_MODEL ?? "gemini-2.5-flash";
 
+// The local gate (runLocalGate) is a GPU-model pre-filter that decides whether an
+// image is worth sending to the full-vision backend. It saves managed-API cost but
+// depends on a local Ollama VLM and — tuned conservatively — throttled recall (most
+// sales came back with zero findings). Disabled by default: every image that clears
+// the cheap, model-free quality gate now goes straight to the vision backend (Claude),
+// so recall is bounded by the vision model, not the GPU pre-filter. Set
+// LOCAL_GATE_ENABLED=true to restore the Ollama pre-filter.
+export const LOCAL_GATE_ENABLED = process.env.LOCAL_GATE_ENABLED === "true";
+
 // System role — establishes context so the model doesn't need to infer it from the user message.
 // Separating system/user is the correct usage of instruction-tuned models (Qwen, Llama, etc.)
 // and is required for the Ollama /api/chat endpoint to use the model's proper instruction template.
@@ -69,47 +78,28 @@ export const VISION_SYSTEM_PROMPT =
   "reel-to-reel tape players, vintage hi-fi equipment (turntables, receivers, amplifiers, speakers), " +
   "vintage cameras (Polaroid, rangefinder, SLR), vintage computers (Apple II, Commodore 64, TRS-80, etc.). " +
   "\n\n" +
-  "For each item note any visible brand labels or maker's marks, the apparent style or era, " +
-  "and condition only when damage is clearly visible. " +
-  "You only describe what is physically visible. You do not guess or infer.";
+  "Be selective — this buyer wants quality, not quantity. Skip everyday junk with no resale " +
+  "value: mass-market flat-pack/particle-board furniture, generic decor, plastic storage bins, " +
+  "cables and chargers, ordinary clothing, and visibly broken items. " +
+  "For each item worth listing, identify it as specifically as you can: the likely maker or brand, " +
+  "model or pattern, style and era, materials, and a brief quality/condition read. Infer maker and " +
+  "era from design cues even without a readable label, but make clear when it is inferred versus " +
+  "confirmed by a visible mark. Never invent items that are not physically in the photo.";
 
 // User turn — enriched format requesting brand/era/condition alongside color+material.
 // chat-plain scored 89% detection + 100% specificity in eval; structured output scored only 50%.
 // Confidence tags ([high]/[medium]/[low]) appended per line; plain-text outperforms JSON constraint.
 export const VISION_USER_PROMPT =
-  "List every notable item visible in this photo, one per line. " +
-  "For furniture: color + material + style + era (e.g. brown leather Chesterfield sofa, walnut mid-century credenza). " +
-  "For kitsch and camp: describe what makes it kitschy — subject, medium, style " +
-  "(e.g. velvet Elvis painting, ceramic rooster lamp, paint-by-number seascape, taxidermy deer head). " +
-  "For vintage electronics and games: brand + type + model if visible " +
-  "(e.g. Atari 2600 console, Pioneer reel-to-reel, Zenith console TV, Commodore 64). " +
-  "Include brand or maker's mark only if a label is clearly readable. " +
-  "Include condition only if damage or wear is clearly visible. " +
-  "End each line with [high], [medium], or [low] to indicate how clearly visible and confidently identifiable the item is. " +
-  "If nothing notable: NOTHING";
+  "List only the items in this photo with genuine resale value to this buyer, one per line. " +
+  "Skip everyday junk — mass-market decor, plastic storage, cables, ordinary clothing, flat-pack or " +
+  "damaged particle-board furniture, boxes. If nothing in the photo is worth reselling, reply with " +
+  "exactly: NOTHING. " +
+  "For each item, be as specific as the image allows — likely maker/brand, model or pattern, style, " +
+  "era, materials, and a short quality/condition read " +
+  "(e.g. 'Stickley-style quartersawn oak Morris chair, Arts & Crafts era, solid, good condition'; " +
+  "'walnut mid-century credenza, tapered legs, minor top wear'; " +
+  "'Atari 2600 6-switch console, early 1980s, cosmetically worn'). " +
+  "Infer maker and era from design cues even without a readable label, noting when it is inferred. " +
+  "End each line with [high], [medium], or [low] for your confidence in the identification. " +
+  "If nothing of value: NOTHING";
 
-// JSON schema passed to Ollama's `format` field — constrains output to structured data.
-export const VISION_SCHEMA = {
-  type: "object",
-  properties: {
-    items: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          description: { type: "string" },
-          category: {
-            type: "string",
-            enum: ["seating", "bed", "case_goods", "collectible", "decor", "other"],
-          },
-        },
-        required: ["description", "category"],
-      },
-    },
-  },
-  required: ["items"],
-} as const;
-
-// Legacy flat prompt kept for the eval harness prompt-comparison runs (baseline / generate endpoint).
-export const VISION_PROMPT_LEGACY =
-  "List the valuable items you see in this estate sale photo. Be specific: for upholstered seating include color, material, and style (e.g. 'navy velvet tufted sectional', 'brown leather Chesterfield sofa', 'cream linen loveseat'). For other items use the specific name (e.g. 'Stickley armchair', 'Tiffany lamp', 'grandfather clock'). Short list only — one item per line. If nothing valuable is visible, respond with exactly one word: NOTHING.";

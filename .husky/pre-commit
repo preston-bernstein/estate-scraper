@@ -1,0 +1,7 @@
+# Full quality gate — every layer must pass before a commit lands:
+#   typecheck → fallow (dead-code, dupes, audit, security) → unit tests
+#   → Playwright e2e → Stryker mutation tests
+# This is intentionally strict (see CLAUDE.md). For an urgent WIP commit you can
+# bypass with `git commit --no-verify`, but CI runs the same gate and will block.
+echo "▶ Running full QA gate (npm run qa)…"
+npm run qa

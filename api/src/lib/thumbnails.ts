@@ -8,7 +8,7 @@ import sharp from "sharp";
 // CDN 404s days after the sale, so once the listing is gone this file is the only
 // way to recompute an embedding if the frozen model ever changes. Lives on the NAS
 // in production (THUMBNAIL_DIR), local disk in dev.
-export const THUMBNAIL_DIR = process.env.THUMBNAIL_DIR ?? "./data/thumbnails";
+const THUMBNAIL_DIR = process.env.THUMBNAIL_DIR ?? "./data/thumbnails";
 
 // 512px max edge, q80 ≈ 15 KB. Big enough to re-embed faithfully (SigLIP downscales
 // to its own input res anyway) and to read at a glance in the UI.

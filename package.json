@@ -18,10 +18,17 @@
     "test": "npm run test -w api -w ui",
     "test:e2e": "npm run test:e2e -w ui",
     "test:watch": "npm run test:watch -w api",
-    "eval": "npm run eval -w api"
+    "test:mutation": "npm run test:mutation -w api -w ui",
+    "lint:fallow": "fallow dead-code && fallow dupes && fallow security",
+    "qa": "npm run typecheck && npm run lint:fallow && npm run test && npm run test:e2e && npm run test:mutation",
+    "qa:fast": "npm run typecheck && npm run lint:fallow && npm run test",
+    "eval": "npm run eval -w api",
+    "prepare": "husky"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
+    "fallow": "2.104.0",
+    "husky": "^9.1.7",
     "typescript": "^5.8.3"
   }
 }

@@ -7,13 +7,17 @@ export function CallbackPage() {
   const handled = useRef(false);
 
   useEffect(() => {
-    if (handled.current || !userManager) return;
+    if (handled.current) return;
     handled.current = true;
+    if (!userManager) { navigate("/", { replace: true }); return; }
 
     userManager
       .signinRedirectCallback()
       .then(() => navigate("/", { replace: true }))
-      .catch(() => navigate("/login", { replace: true }));
+      .catch((err: unknown) => {
+        console.error("[auth callback]", err);
+        navigate("/login", { replace: true });
+      });
   }, [navigate]);
 
   return (
