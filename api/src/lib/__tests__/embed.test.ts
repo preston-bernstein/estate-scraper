@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  EMBED_SEARCH_TIMEOUT_MS,
   blobToFloat32,
   embedImages,
   embeddingEnabled,
   float32ToBlob,
   parseEmbedResponse,
 } from "../embed.js";
+
+describe("EMBED_SEARCH_TIMEOUT_MS", () => {
+  it("defaults to a short (3s) budget distinct from the 120s batch timeout", () => {
+    expect(EMBED_SEARCH_TIMEOUT_MS).toBe(3000);
+  });
+});
 
 describe("float32 blob round-trip", () => {
   it("preserves values through encode/decode", () => {
@@ -173,5 +180,94 @@ describe("embedImages batching", () => {
     expect(out).toHaveLength(5);
     // 5 inputs at batch size 2 → 3 requests.
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("embedQueryText", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function freshEmbedQueryText() {
+    vi.stubEnv("EMBED_API_BASE", "http://embed.test");
+    vi.stubEnv("EMBED_MODEL", "siglip-so400m-patch14-384");
+    vi.resetModules();
+    return (await import("../embed.js")).embedQueryText;
+  }
+
+  it("returns null when embedding is disabled (no EMBED_API_BASE)", async () => {
+    vi.resetModules();
+    const { embedQueryText } = await import("../embed.js");
+    const spy = vi.spyOn(globalThis, "fetch");
+    expect(await embedQueryText("couch")).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("returns the query vector on a well-formed response", async () => {
+    const embedQueryText = await freshEmbedQueryText();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ index: 0, embedding: [1, 2, 3] }] }),
+    } as Response);
+    expect(await embedQueryText("couch")).toEqual([1, 2, 3]);
+  });
+
+  it("discards a wrong-dimension response and returns null (AC8)", async () => {
+    vi.stubEnv("EMBED_DIM", "4");
+    const embedQueryText = await freshEmbedQueryText();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ index: 0, embedding: [1, 2, 3] }] }), // dim 3 != 4
+    } as Response);
+    expect(await embedQueryText("couch")).toBeNull();
+  });
+
+  it("returns null within the fallback budget when the request times out (AC5 building block)", async () => {
+    vi.stubEnv("EMBED_SEARCH_TIMEOUT_MS", "30");
+    const embedQueryText = await freshEmbedQueryText();
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit).signal;
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    });
+    const start = Date.now();
+    const result = await embedQueryText("a query that will time out");
+    expect(result).toBeNull();
+    expect(Date.now() - start).toBeLessThan(1000); // well within the fallback budget
+  });
+
+  it("returns null on a non-ok HTTP response", async () => {
+    const embedQueryText = await freshEmbedQueryText();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 500 } as Response);
+    expect(await embedQueryText("couch")).toBeNull();
+  });
+
+  it("truncates over-length input to the 200-char cap before sending", async () => {
+    const embedQueryText = await freshEmbedQueryText();
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ index: 0, embedding: [1] }] }),
+    } as Response);
+    const longQuery = "x".repeat(500);
+    await embedQueryText(longQuery);
+    const [, init] = spy.mock.calls[0]!;
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect((body.input as string).length).toBe(200);
+  });
+
+  it("never logs the raw query text on any outcome", async () => {
+    const embedQueryText = await freshEmbedQueryText();
+    const marker = "SUPER-SECRET-QUERY-MARKER";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 500 } as Response);
+    await embedQueryText(marker);
+    for (const call of errorSpy.mock.calls) {
+      for (const arg of call) {
+        expect(String(arg)).not.toContain(marker);
+      }
+    }
   });
 });

@@ -19,6 +19,13 @@ const EMBED_DIM = process.env.EMBED_DIM ? Number(process.env.EMBED_DIM) : null;
 const EMBED_BATCH = Number(process.env.EMBED_BATCH ?? 16);
 // Concurrent in-flight batch requests.
 const EMBED_WORKERS = Number(process.env.EMBED_WORKERS ?? 2);
+// Short timeout for query embedding (Phase 2 hybrid search) — this sits on a live
+// user-facing search request, unlike the 120s batch-scan timeout above, so a slow
+// endpoint must fail fast and fall back to lexical-only results (AC5).
+export const EMBED_SEARCH_TIMEOUT_MS = Number(process.env.EMBED_SEARCH_TIMEOUT_MS ?? 3000);
+// Server-side cap on query text sent for embedding (NFR: bound token cost of any
+// single search request).
+const EMBED_QUERY_MAX_CHARS = 200;
 
 export function embeddingEnabled(): boolean {
   return EMBED_API_BASE.length > 0;
@@ -117,4 +124,45 @@ export async function embedImages(buffers: Buffer[]): Promise<(number[] | null)[
     Array.from({ length: Math.min(EMBED_WORKERS, batches.length) }, () => worker()),
   );
   return results;
+}
+
+// Embed a single free-text search query into the same SigLIP vector space as
+// Image embeddings (Phase 2 hybrid search, ADR 0016/0017). Distinct from
+// embedImages: single-string input, a short request timeout (EMBED_SEARCH_TIMEOUT_MS,
+// not the 120s batch timeout), and a hard cap on input length. Never throws — any
+// failure (disabled, timeout, HTTP error, dim mismatch) returns null so the caller
+// can fall back to lexical-only search. NEVER logs the raw query text (secrets/
+// logging requirement) — only status/outcome, matching embedBatch's convention.
+export async function embedQueryText(text: string): Promise<number[] | null> {
+  if (!embeddingEnabled()) return null;
+
+  const capped = text.slice(0, EMBED_QUERY_MAX_CHARS);
+  if (capped.trim().length === 0) return null;
+
+  try {
+    const response = await fetch(`${EMBED_API_BASE}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(EMBED_API_KEY ? { Authorization: `Bearer ${EMBED_API_KEY}` } : {}),
+      },
+      body: JSON.stringify({ model: EMBED_MODEL, input: capped }),
+      signal: AbortSignal.timeout(EMBED_SEARCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      console.error(`  [embed] query embed HTTP ${response.status} — discarded`);
+      return null;
+    }
+    const payload = (await response.json()) as EmbedResponse;
+    const [vec] = parseEmbedResponse(payload, 1);
+    if (!vec) {
+      console.error("  [embed] query embed rejected (missing or dim mismatch)");
+      return null;
+    }
+    return vec;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "unknown error";
+    console.error(`  [embed] query embed failed (${msg}) — falling back to lexical`);
+    return null;
+  }
 }
