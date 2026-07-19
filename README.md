@@ -94,7 +94,7 @@ scripts/      LaunchAgent plist, deploy helpers
 
 ## Quick start
 
-**Prerequisites:** Node.js ≥ 22, Ollama with a vision model loaded, SQLite (bundled).
+**Prerequisites:** Node.js ≥ 24, Ollama with a vision model loaded, SQLite (bundled).
 
 ```bash
 git clone https://github.com/preston-bernstein/estate-scraper
@@ -147,7 +147,7 @@ Results print to stdout; edit `api/eval/labels.json` to add labeled images.
 
 ## Architecture decisions
 
-Nine ADRs in [`docs/adr/`](docs/adr/) document the key choices: SQLite over flat files, generic vision pass with hunt-time filtering, scheduled scans over manual triggers, OIDC auth via Authentik, and more.
+18 ADRs in [`docs/adr/`](docs/adr/) document the key choices: SQLite over flat files, generic vision pass with hunt-time filtering, scheduled scans over manual triggers, OIDC auth via Authentik, the image/finding/item data model, asymmetric outcome propagation, SigLIP embeddings, and more.
 
 ## License
 
