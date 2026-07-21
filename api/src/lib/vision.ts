@@ -61,6 +61,17 @@ export const VISION_API_BASE = process.env.VISION_API_BASE ?? "";
 export const VISION_API_KEY = process.env.VISION_API_KEY ?? "";
 export const VISION_API_MODEL = process.env.VISION_API_MODEL ?? "gemini-2.5-flash";
 
+// runVisionManaged's per-call HTTP timeout. Gemini answers in a few seconds, but a
+// RunPod serverless worker that has scaled to zero can take several minutes to cold
+// start before it even begins inference (497s observed against Qwen3-VL-32B-Instruct-
+// FP8 in calibration) — the old 120s default aborted the client side before RunPod's
+// own cold start finished, guaranteeing an error on the first call after any idle
+// gap. 600s gives real cold-start headroom without materially changing behavior
+// against a fast managed backend like Gemini.
+export const VISION_API_TIMEOUT_MS = process.env.VISION_API_TIMEOUT_MS
+  ? Number(process.env.VISION_API_TIMEOUT_MS)
+  : 600_000;
+
 // The local gate (runLocalGate) is a free GPU-model pre-filter (own hardware, no
 // per-call API cost) that screens out obvious non-candidates — exteriors, empty
 // rooms, price boards, HVAC/electrical panels, vehicles, boxes-only shots — before

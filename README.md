@@ -50,7 +50,7 @@ Each finding line carries a plain-text confidence tag (`[high]`, `[medium]`, or 
 
 ### Calibration
 
-Cheap-tier choices (`K`, the per-sale floor, the ranker prompts/exemplars) are tuned against a one-time **reference pass**: a single money-no-object Scan that sends every image through the 32B (~$22, frozen). Thereafter `recall@K` — what fraction of the reference's findings the cascade actually selected — is measured offline for free, yielding a "$X/mo captures Y% of full-pass findings" curve. The budget is chosen from that curve, with data rather than guesswork. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md). Calibrated RunPod-backend results (backend agreement rate, latency, throughput, chosen deployment mode — a separate metric from the `recall@K` above, see [`CALIBRATION.md`](docs/runpod-vision-cutover/CALIBRATION.md)) will be recorded in [`docs/runpod-vision-cutover/calibration-results.md`](docs/runpod-vision-cutover/calibration-results.md) once the calibration run completes.
+Cheap-tier choices (`K`, the per-sale floor, the ranker prompts/exemplars) are tuned against a one-time **reference pass**: a single money-no-object Scan that sends every image through the 32B (~$22, frozen). Thereafter `recall@K` — what fraction of the reference's findings the cascade actually selected — is measured offline for free, yielding a "$X/mo captures Y% of full-pass findings" curve. The budget is chosen from that curve, with data rather than guesswork. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md). RunPod Tier 2 (`Qwen/Qwen3-VL-32B-Instruct-FP8`, serverless) is calibrated against the prior Gemini baseline in [`docs/runpod-vision-cutover/calibration-results.md`](docs/runpod-vision-cutover/calibration-results.md): 93.8% backend agreement rate (a separate metric from the `recall@K` above — see [`CALIBRATION.md`](docs/runpod-vision-cutover/CALIBRATION.md)), zero hallucinated findings, steady-state latency p50 10.3s / p95 25.7s, ~500s cold start after an idle scale-down.
 
 ### Hunt matching
 
@@ -67,7 +67,7 @@ After attending a sale, users log an outcome (`good` / `meh` / `waste`). Outcome
 | Scraper | Node.js, custom HTML parser |
 | Tier 0 — pre-filter | Sharp (pHash dedup, quality gate), CPU |
 | Tier 1 — ranker | CLIP/SigLIP embeddings, batched, scores every survivor |
-| Tier 2 — strong VLM | RunPod serverless `qwen3-vl:30b` / `Qwen3-VL-32B`, top-K images only |
+| Tier 2 — strong VLM | RunPod serverless `Qwen/Qwen3-VL-32B-Instruct-FP8`, top-K images only |
 | Calibration | One-time reference pass + offline `recall@K` against a labeled gold set |
 | API | Hono, SQLite, Drizzle ORM |
 | UI | React, Vite, Tailwind CSS |
@@ -116,9 +116,10 @@ All config lives in `api/.env`. See [`api/.env.example`](api/.env.example) for t
 | `HOME_ADDRESS` / `HOME_CITY` / `HOME_STATE` / `HOME_ZIP` | — | Display only, not geocoded |
 | `OLLAMA_HOST` | `http://localhost:11436` | Ollama endpoint (broker port recommended) |
 | `OLLAMA_MODEL` | `qwen3-vl:30b` | Any Ollama vision model |
-| `VISION_API_BASE` | — | OpenAI-compat base URL for the managed Tier 2 VLM (Gemini or RunPod); unset falls back to Ollama |
+| `VISION_API_BASE` | — | OpenAI-compat base URL for the managed Tier 2 VLM; production runs RunPod exclusively as of the runpod-vision-cutover (Gemini documented in `.env.example` as a fallback only, not active) |
 | `VISION_API_KEY` | — | Key for the managed Tier 2 VLM |
-| `VISION_API_MODEL` | `gemini-2.5-flash` | Model served at `VISION_API_BASE`, e.g. `Qwen/Qwen3-VL-32B-Instruct` on RunPod |
+| `VISION_API_MODEL` | `gemini-2.5-flash` (library default if unset) | Production value: `Qwen/Qwen3-VL-32B-Instruct-FP8` on RunPod |
+| `VISION_API_TIMEOUT_MS` | `600000` | Per-call HTTP timeout for the managed VLM; must stay above RunPod's cold-start time (~500s observed) or post-idle calls abort client-side before the worker finishes starting |
 | `RUNPOD_API_KEY` | — | RunPod management API key for watchdog `podStop` calls, distinct from `VISION_API_KEY` |
 | `RUNPOD_POD_NAME_MATCH` | `estate-scraper-vision` | Pod name (exact match or strict prefix) the watchdog stops; never a loose substring |
 | `WATCHDOG_MAX_SCAN_HOURS` | — | Required for the watchdog's staleness/crash guard; no built-in default |

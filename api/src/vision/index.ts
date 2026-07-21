@@ -12,6 +12,7 @@ import {
   VISION_API_BASE,
   VISION_API_KEY,
   VISION_API_MODEL,
+  VISION_API_TIMEOUT_MS,
   VISION_SYSTEM_PROMPT,
   VISION_USER_PROMPT,
   VISION_WORKERS,
@@ -469,7 +470,7 @@ async function runVisionManaged(imageBase64: string): Promise<string> {
       temperature: 0.1,
       max_tokens: 512,
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(VISION_API_TIMEOUT_MS),
   });
 
   if (!response.ok) throw new Error(`Vision API HTTP ${response.status}`);

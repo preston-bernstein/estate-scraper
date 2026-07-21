@@ -77,9 +77,15 @@ export async function closeSidecarSession(): Promise<void> {
 
 /**
  * Combined budget for a single navigate()+getContent() attempt (see
- * `navigateAndGetContent` below). Matches plan.md's chosen value.
+ * `navigateAndGetContent` below). Raised from the original 20s: real-world
+ * measurement against estatesales.net through the VPN-isolated sidecar
+ * showed navigate() alone taking ~15s (even after fixing the sidecar's
+ * navigate to use wait_until="domcontentloaded" instead of the slower
+ * default "load" — see scraper-commons commit db74a7b), leaving no room
+ * for the getContent() round trip on top. 45s gives real headroom above
+ * the observed cost of a single page fetch.
  */
-const COMBINED_OPERATION_TIMEOUT_MS = 20_000;
+const COMBINED_OPERATION_TIMEOUT_MS = 45_000;
 
 /**
  * Distinct sentinel returned by `navigateAndGetContent` when the combined

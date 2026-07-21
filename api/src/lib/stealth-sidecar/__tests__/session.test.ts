@@ -262,7 +262,7 @@ describe("stealth-sidecar session", () => {
       vi.mocked(getContent).mockImplementation(() => new Promise(() => {}));
 
       const resultPromise = fetchPageHtml("https://example.com/slow");
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(45_000);
       const result = await resultPromise;
 
       expect(result).toBeNull();

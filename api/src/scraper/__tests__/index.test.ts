@@ -307,7 +307,7 @@ describe("scrapeWithinRadius", () => {
     });
 
     const resultPromise = scrapeWithinRadius({ radiusMiles: 50 });
-    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(45_000);
     const result = await resultPromise;
 
     expect(result).toHaveLength(1);
