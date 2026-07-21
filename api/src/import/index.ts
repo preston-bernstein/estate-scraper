@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { runMigrations } from "../db/index.js";
 import { distanceFromHome, geocodeAddress } from "../lib/geo.js";
 import { fetchText } from "../lib/http.js";
+import { closeSidecarSession } from "../lib/stealth-sidecar/session.js";
 import { parseSaleDetail } from "../scraper/parse.js";
 import {
   getProcessedImageUrls,
@@ -93,64 +94,68 @@ async function seedDefaultHunts() {
 }
 
 async function main() {
-  runMigrations();
+  try {
+    runMigrations();
 
-  const args = process.argv.slice(2);
-  let filePath = resolve(process.cwd(), "../findings.json");
-  let seedHunts = false;
+    const args = process.argv.slice(2);
+    let filePath = resolve(process.cwd(), "../findings.json");
+    let seedHunts = false;
 
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--file") {
-      filePath = resolve(process.cwd(), args[++index]!);
-    } else if (arg === "--seed-hunts") {
-      seedHunts = true;
-    }
-  }
-
-  const raw = readFileSync(filePath, "utf8");
-  const entries = JSON.parse(raw) as LegacySale[];
-  const scrapedAt = new Date().toISOString();
-  const processedUrls = await getProcessedImageUrls();
-
-  let salesImported = 0;
-  let findingsImported = 0;
-  let findingsSkipped = 0;
-
-  for (const [index, entry] of entries.entries()) {
-    console.log(`[${index + 1}/${entries.length}] ${entry.sale_id}`);
-
-    const sale = await ensureSaleRecord(entry, scrapedAt);
-    if (!sale) {
-      continue;
+    for (let index = 0; index < args.length; index += 1) {
+      const arg = args[index];
+      if (arg === "--file") {
+        filePath = resolve(process.cwd(), args[++index]!);
+      } else if (arg === "--seed-hunts") {
+        seedHunts = true;
+      }
     }
 
-    salesImported += 1;
+    const raw = readFileSync(filePath, "utf8");
+    const entries = JSON.parse(raw) as LegacySale[];
+    const scrapedAt = new Date().toISOString();
+    const processedUrls = await getProcessedImageUrls();
 
-    for (const finding of entry.findings) {
-      if (processedUrls.has(finding.image_url)) {
-        findingsSkipped += 1;
+    let salesImported = 0;
+    let findingsImported = 0;
+    let findingsSkipped = 0;
+
+    for (const [index, entry] of entries.entries()) {
+      console.log(`[${index + 1}/${entries.length}] ${entry.sale_id}`);
+
+      const sale = await ensureSaleRecord(entry, scrapedAt);
+      if (!sale) {
         continue;
       }
 
-      await insertFinding(
-        entry.sale_id,
-        finding.image_url,
-        finding.findings,
-        scrapedAt,
-      );
-      processedUrls.add(finding.image_url);
-      findingsImported += 1;
+      salesImported += 1;
+
+      for (const finding of entry.findings) {
+        if (processedUrls.has(finding.image_url)) {
+          findingsSkipped += 1;
+          continue;
+        }
+
+        await insertFinding(
+          entry.sale_id,
+          finding.image_url,
+          finding.findings,
+          scrapedAt,
+        );
+        processedUrls.add(finding.image_url);
+        findingsImported += 1;
+      }
     }
-  }
 
-  if (seedHunts) {
-    await seedDefaultHunts();
-  }
+    if (seedHunts) {
+      await seedDefaultHunts();
+    }
 
-  console.log(
-    `\nImport complete: ${salesImported} sales, ${findingsImported} findings (${findingsSkipped} skipped).`,
-  );
+    console.log(
+      `\nImport complete: ${salesImported} sales, ${findingsImported} findings (${findingsSkipped} skipped).`,
+    );
+  } finally {
+    await closeSidecarSession();
+  }
 }
 
 main().catch((error) => {
