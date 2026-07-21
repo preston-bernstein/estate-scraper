@@ -1,0 +1,14 @@
+[Unit]
+Description=estate-scraper RunPod pod auto-stop watchdog (stop billing once analyzing completes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/estate-scraper/estate-scraper
+ExecStart=/home/estate-scraper/estate-scraper/scripts/runpod_vision_watchdog.sh
+TimeoutStartSec=600
+Nice=10
+
+[Install]
+WantedBy=default.target

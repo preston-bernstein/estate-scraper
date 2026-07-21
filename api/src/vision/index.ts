@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import {
+  activeVlmModel,
   LOCAL_GATE_ENABLED,
   LOCAL_GATE_MAX_TOKENS,
   LOCAL_GATE_PROMPT,
@@ -113,6 +114,8 @@ export type VisionEvent =
       positionIndex: number;
       total: number;
       hasFindings: boolean;
+      durationS: number;
+      backend: string;
     }
   | { type: "done" };
 
@@ -752,6 +755,8 @@ export async function* processSalesStream(
           positionIndex: i,
           total,
           hasFindings: has,
+          durationS: r.durationS,
+          backend: activeVlmModel(),
         };
       }
       yield {

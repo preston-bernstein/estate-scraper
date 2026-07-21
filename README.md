@@ -50,7 +50,7 @@ Each finding line carries a plain-text confidence tag (`[high]`, `[medium]`, or 
 
 ### Calibration
 
-Cheap-tier choices (`K`, the per-sale floor, the ranker prompts/exemplars) are tuned against a one-time **reference pass**: a single money-no-object Scan that sends every image through the 32B (~$22, frozen). Thereafter `recall@K` — what fraction of the reference's findings the cascade actually selected — is measured offline for free, yielding a "$X/mo captures Y% of full-pass findings" curve. The budget is chosen from that curve, with data rather than guesswork. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md).
+Cheap-tier choices (`K`, the per-sale floor, the ranker prompts/exemplars) are tuned against a one-time **reference pass**: a single money-no-object Scan that sends every image through the 32B (~$22, frozen). Thereafter `recall@K` — what fraction of the reference's findings the cascade actually selected — is measured offline for free, yielding a "$X/mo captures Y% of full-pass findings" curve. The budget is chosen from that curve, with data rather than guesswork. See [ADR 0010](docs/adr/0010-budget-bounded-runpod-cascade.md). Calibrated RunPod-backend results (backend agreement rate, latency, throughput, chosen deployment mode — a separate metric from the `recall@K` above, see [`CALIBRATION.md`](docs/runpod-vision-cutover/CALIBRATION.md)) will be recorded in [`docs/runpod-vision-cutover/calibration-results.md`](docs/runpod-vision-cutover/calibration-results.md) once the calibration run completes.
 
 ### Hunt matching
 
@@ -116,9 +116,12 @@ All config lives in `api/.env`. See [`api/.env.example`](api/.env.example) for t
 | `HOME_ADDRESS` / `HOME_CITY` / `HOME_STATE` / `HOME_ZIP` | — | Display only, not geocoded |
 | `OLLAMA_HOST` | `http://localhost:11436` | Ollama endpoint (broker port recommended) |
 | `OLLAMA_MODEL` | `qwen3-vl:30b` | Any Ollama vision model |
-| `RUNPOD_ENDPOINT_ID` | — | RunPod serverless endpoint; enables local Qwen3 gate |
-| `RUNPOD_API_KEY` | — | RunPod API key |
-| `RUNPOD_MODEL` | `Qwen/Qwen3-VL-32B-Instruct` | Model served on the RunPod endpoint |
+| `VISION_API_BASE` | — | OpenAI-compat base URL for the managed Tier 2 VLM (Gemini or RunPod); unset falls back to Ollama |
+| `VISION_API_KEY` | — | Key for the managed Tier 2 VLM |
+| `VISION_API_MODEL` | `gemini-2.5-flash` | Model served at `VISION_API_BASE`, e.g. `Qwen/Qwen3-VL-32B-Instruct` on RunPod |
+| `RUNPOD_API_KEY` | — | RunPod management API key for watchdog `podStop` calls, distinct from `VISION_API_KEY` |
+| `RUNPOD_POD_NAME_MATCH` | `estate-scraper-vision` | Pod name (exact match or strict prefix) the watchdog stops; never a loose substring |
+| `WATCHDOG_MAX_SCAN_HOURS` | — | Required for the watchdog's staleness/crash guard; no built-in default |
 | `AUTH_MODE` | `stub` | `stub` · `forwarded` · `jwt` |
 | `OIDC_ISSUER` | — | Required when `AUTH_MODE=jwt` |
 | `ORACLE_API_BASE` | — | OpenAI-compat base URL for uncertain-zone escalation |
