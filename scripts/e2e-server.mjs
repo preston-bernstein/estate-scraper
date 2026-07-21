@@ -1,8 +1,10 @@
 // Boots the real API (stub auth, production mode serving the stub UI build) against a
 // fresh temp SQLite db seeded with known states, for Playwright e2e. Migrates + seeds
 // BEFORE serving so tests never race an empty db.
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
+import { eq } from "drizzle-orm";
 
 const apiDir = fileURLToPath(new URL("../api", import.meta.url));
 const DB = "/tmp/estate-e2e.db";
@@ -23,6 +25,19 @@ process.env.HOME_LAT = "33.8";
 process.env.HOME_LON = "-84.26";
 
 for (const suffix of ["", "-wal", "-shm"]) rmSync(DB + suffix, { force: true });
+
+// A real, tiny, valid JPEG (1x1 white pixel) — the /thumbs/:id route reads this file
+// straight from disk and serves it as-is, and a browser <img> only keeps a src (rather
+// than firing onError and cycling to the next ResilientImage candidate) if it actually
+// decodes as an image, not just on a 200 status. A fake path here would make BOTH
+// ResilientImage candidates (thumbUrl AND the fake example.com imageUrl) fail, which
+// defeats the "prefers the durable thumbnail over a dead CDN url" test this seed exists
+// for — the CDN url (imageUrl) is what's *meant* to be dead, not the durable thumbnail.
+const TINY_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+  "base64",
+);
+mkdirSync(process.env.THUMBNAIL_DIR, { recursive: true });
 
 const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
 const now = new Date().toISOString();
@@ -47,6 +62,9 @@ const seed = [
 ];
 for (const s of seed) {
   const img = db.insert(images).values({ saleId: s.saleId, imageUrl: s.imageUrl, thumbnailPath: "/nonexistent/thumb.jpg" }).returning({ id: images.id }).get();
+  const thumbnailPath = join(process.env.THUMBNAIL_DIR, `${img.id}.jpg`);
+  writeFileSync(thumbnailPath, TINY_JPEG);
+  db.update(images).set({ thumbnailPath }).where(eq(images.id, img.id)).run();
   db.insert(findings).values({ saleId: s.saleId, imageId: img.id, imageUrl: s.imageUrl, description: s.description, scrapedAt: now, confidence: s.confidence }).run();
 }
 

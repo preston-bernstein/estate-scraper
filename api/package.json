@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mutation": "stryker run",
-    "eval": "tsx eval/index.ts"
+    "eval": "tsx eval/index.ts",
+    "calibrate:runpod": "tsx eval/calibrate-runpod.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",

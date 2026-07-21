@@ -15,6 +15,8 @@ import {
   upsertSale,
 } from "./persist.js";
 import { embedPendingImages } from "./embed-pass.js";
+import type { ReferenceRecord } from "./reference.js";
+import { toReferenceRecord } from "./reference.js";
 import { ScanStateWriter } from "./state.js";
 
 type ScanOptions = {
@@ -63,18 +65,6 @@ function parseArgs(argv: string[]): ScanOptions {
 
   return options;
 }
-
-type ReferenceRecord = {
-  saleId: string;
-  saleTitle: string;
-  saleUrl: string;
-  imageUrl: string;
-  positionIndex: number;
-  total: number;
-  response: string;
-  hasFindings: boolean;
-  error: string;
-};
 
 async function main() {
   runMigrations();
@@ -190,17 +180,7 @@ async function main() {
       } else if (event.type === "image_result") {
         totalImages++;
         if (event.hasFindings) totalFindings++;
-        refRecords.push({
-          saleId: event.saleId,
-          saleTitle: currentSaleTitle,
-          saleUrl: currentSaleUrl,
-          imageUrl: event.imageUrl,
-          positionIndex: event.positionIndex,
-          total: event.total,
-          response: event.response,
-          hasFindings: event.hasFindings,
-          error: event.error,
-        });
+        refRecords.push(toReferenceRecord(event, currentSaleTitle, currentSaleUrl));
         if (refRecords.length % 100 === 0) {
           console.log(`  [reference] ${refRecords.length} images recorded…`);
         }
