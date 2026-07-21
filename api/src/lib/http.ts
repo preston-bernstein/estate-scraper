@@ -1,26 +1,12 @@
 import { FETCH_HEADERS } from "./scraping.js";
+import { fetchPageHtml } from "./stealth-sidecar/session.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function fetchText(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: FETCH_HEADERS,
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    if (!response.ok) {
-      console.error(`  [error] ${url}: HTTP ${response.status}`);
-      return null;
-    }
-
-    return response.text();
-  } catch (error) {
-    console.error(`  [error] ${url}:`, error);
-    return null;
-  }
+  return fetchPageHtml(url);
 }
 
 export async function politeDelay(minMs = 1200, maxMs = 3500): Promise<void> {

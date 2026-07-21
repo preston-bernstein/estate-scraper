@@ -16,6 +16,7 @@ import {
 } from "./persist.js";
 import { embedPendingImages } from "./embed-pass.js";
 import { ScanStateWriter } from "./state.js";
+import { SidecarError } from "../lib/stealth-sidecar/errors.js";
 
 type ScanOptions = {
   radiusMiles?: number;
@@ -276,7 +277,12 @@ async function main() {
       console.log(`\nScan complete: ${totalFindings} findings across ${totalImages} images.`);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown scan error";
+    const message =
+      error instanceof SidecarError
+        ? `sidecar error: ${error.message}`
+        : error instanceof Error
+          ? error.message
+          : "Unknown scan error";
     writer.pushEvent({ type: "error", msg: message });
     writer.finish(message, true);
     console.error(message);
